@@ -1,0 +1,33 @@
+{
+  "name": "@jules/storybook-deployer",
+  "version": "1.0.0",
+  "description": "A CLI to automate the deployment of Storybook static builds.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "storybook-deploy": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "lib"
+  ],
+  "keywords": [
+    "storybook",
+    "deploy",
+    "cli"
+  ],
+  "author": "Jules",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "axios": "^1.12.2",
+    "chalk": "^4.1.2",
+    "yargs": "^18.0.0"
+  },
+  "devDependencies": {
+    "dotenv": "^17.2.2"
+  }
+}
