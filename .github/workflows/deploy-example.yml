@@ -1,0 +1,44 @@
+# Example GitHub Actions workflow for deploying Storybook
+
+name: Deploy Storybook
+
+on:
+  # Run this workflow whenever a push is made to the main branch
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy-storybook:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18' # Specify a Node.js version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Storybook
+        # Replace this command with your project's actual Storybook build command
+        run: npm run build-storybook
+
+      - name: Deploy to Cloud Service
+        run: |
+          npx storybook-deploy \
+            --dir ./storybook-static \
+            --commit-sha ${{ github.sha }} \
+            --branch ${{ github.ref_name }}
+        env:
+          # The API key is passed securely as an environment variable.
+          # Configure 'YOUR_DEPLOYMENT_API_KEY' in your repository's Settings > Secrets.
+          STORYBOOK_DEPLOYER_API_KEY: ${{ secrets.YOUR_DEPLOYMENT_API_KEY }}
+
+          # You can also configure other options via environment variables if needed
+          # STORYBOOK_DEPLOYER_API_URL: "https://your-custom-api-url.com/v1"
