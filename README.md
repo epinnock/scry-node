@@ -13,7 +13,7 @@ This tool is designed for execution within a CI/CD pipeline (such as GitHub Acti
 Assuming the package is published to npm, you can install it as a development dependency in your project:
 
 ```bash
-npm install @jules/storybook-deployer --save-dev
+npm install @scry/storybook-deployer --save-dev
 ```
 
 ## Usage
