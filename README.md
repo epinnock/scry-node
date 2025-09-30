@@ -34,6 +34,12 @@ pnpm add github:epinnock/scry-node -D
 yarn add https://github.com/epinnock/scry-node --dev
 ```
 
+> **Note:** Some package managers (like pnpm) may limit postinstall scripts. If the configuration file is not automatically created, manually run the setup:
+> ```bash
+> npx storybook-deploy-setup
+> ```
+> Or manually create the config file at `~/.storybook-deployer.json` with your preferred defaults (see [Configuration File](#configuration-file) section below).
+
 **Automatic Configuration**: Upon installation, a configuration file (`~/.storybook-deployer.json`) is automatically created in your home directory. This allows you to set default values and reduce the need for repetitive command-line arguments.
 
 ## Usage
