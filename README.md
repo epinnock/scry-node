@@ -44,6 +44,43 @@ yarn add https://github.com/epinnock/scry-node --dev
 
 **Automatic Configuration**: Upon installation, a configuration file (`.storybook-deployer.json`) is automatically created in your project directory. This allows you to set default values and reduce the need for repetitive command-line arguments.
 
+## Configuration for Your API
+
+To use this package with the Storybook deployment API at `https://storybook-deployment-service.epinnock.workers.dev`, configure your `.storybook-deployer.json` file:
+
+```json
+{
+  "apiUrl": "https://storybook-deployment-service.epinnock.workers.dev",
+  "dir": "./storybook-static",
+  "project": "my-project",
+  "version": "v1.0.0",
+  "verbose": false
+}
+```
+
+**API Endpoints Used:**
+1. **Presigned URL**: `POST /presigned-url/{project}/{version}/storybook.zip`
+2. **Direct Upload**: `PUT` to the presigned URL returned from step 1
+
+**Example Usage:**
+
+```bash
+# Deploy to project "my-storybook" with version "v1.0.0"
+npx storybook-deploy \
+  --dir ./storybook-static \
+  --project my-storybook \
+  --version v1.0.0
+
+# Using environment variables
+export STORYBOOK_DEPLOYER_API_URL=https://storybook-deployment-service.epinnock.workers.dev
+export STORYBOOK_DEPLOYER_PROJECT=my-project
+export STORYBOOK_DEPLOYER_VERSION=v1.0.0
+
+npx storybook-deploy --dir ./storybook-static
+```
+
+**Note:** If `--project` or `--version` are not provided, they default to `main` and `latest` respectively.
+
 ## Usage
 
 The CLI provides a single command to handle the deployment. It can be run using `npx` from within your project's directory.
@@ -59,10 +96,10 @@ The CLI is configured through a combination of command-line options and environm
 | Option         | Environment Variable                  | Description                                                  | Required | Default                              |
 |----------------|---------------------------------------|--------------------------------------------------------------|----------|--------------------------------------|
 | `--dir`        | `STORYBOOK_DEPLOYER_DIR`              | Path to the built Storybook directory (e.g., `storybook-static`). | Yes      | -                                    |
-| `--api-key`    | `STORYBOOK_DEPLOYER_API_KEY`          | The API key for the deployment service.                        | Yes      | -                                    |
+| `--api-key`    | `STORYBOOK_DEPLOYER_API_KEY`          | The API key for the deployment service.                        | No       | -                                    |
 | `--api-url`    | `STORYBOOK_DEPLOYER_API_URL`          | Base URL for the deployment service API.                       | No       | `https://api.default-service.com/v1`  |
-| `--commit-sha` | `STORYBOOK_DEPLOYER_COMMIT_SHA`       | The Git commit SHA that triggered the deployment.              | No       | -                                    |
-| `--branch`     | `STORYBOOK_DEPLOYER_BRANCH`           | The Git branch from which the deployment was initiated.        | No       | -                                    |
+| `--project`    | `STORYBOOK_DEPLOYER_PROJECT`          | The project name/identifier.                                   | No       | `main`                               |
+| `--version`    | `STORYBOOK_DEPLOYER_VERSION`          | The version identifier for the deployment.                     | No       | `latest`                             |
 | `--verbose`    | `STORYBOOK_DEPLOYER_VERBOSE`          | Enable verbose logging for debugging purposes.                 | No       | `false`                              |
 | `--help`, `-h` | -                                     | Show the help message.                                       | -        | -                                    |
 | `--version`, `-v`| -                                     | Show the version number.                                     | -        | -                                    |
@@ -81,9 +118,10 @@ The configuration file (`.storybook-deployer.json`) is automatically created in 
 
 ```json
 {
-  "apiKey": "your-api-key-here",
   "apiUrl": "https://api.your-service.com/v1",
   "dir": "./storybook-static",
+  "project": "my-project",
+  "version": "v1.0.0",
   "verbose": false
 }
 ```
@@ -92,15 +130,15 @@ The configuration file (`.storybook-deployer.json`) is automatically created in 
 - `apiKey` → `--api-key` CLI option
 - `apiUrl` → `--api-url` CLI option
 - `dir` → `--dir` CLI option
-- `commitSha` → `--commit-sha` CLI option
-- `branch` → `--branch` CLI option
+- `project` → `--project` CLI option
+- `version` → `--version` CLI option
 - `verbose` → `--verbose` CLI option
 
 ### Usage Examples
 
 **Basic usage with config file:**
 ```bash
-# Set apiKey in .storybook-deployer.json, then run:
+# Set project and version in .storybook-deployer.json, then run:
 npx storybook-deploy --dir ./storybook-static
 ```
 
@@ -114,14 +152,24 @@ npx storybook-deploy --api-url https://staging-api.service.com/v1
 ```bash
 npx storybook-deploy \
   --dir ./storybook-static \
-  --api-key $API_KEY \
-  --commit-sha $GITHUB_SHA \
-  --branch $GITHUB_REF_NAME \
+  --api-url https://storybook-deployment-service.epinnock.workers.dev \
+  --project my-storybook \
+  --version v1.0.0 \
   --verbose
 ```
 
 ## Example CI/CD Integration (GitHub Actions)
 
 This tool is ideal for use in a GitHub Actions workflow. The API key should be stored as a [GitHub Secret](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions).
+
+**Example workflow:**
+```yaml
+- name: Deploy Storybook
+  env:
+    STORYBOOK_DEPLOYER_API_URL: https://storybook-deployment-service.epinnock.workers.dev
+    STORYBOOK_DEPLOYER_PROJECT: ${{ github.event.repository.name }}
+    STORYBOOK_DEPLOYER_VERSION: ${{ github.sha }}
+  run: npx storybook-deploy --dir ./storybook-static
+```
 
 See the example workflow file: `.github/workflows/deploy-example.yml`

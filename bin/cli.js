@@ -29,8 +29,8 @@ async function runDeployment(argv) {
         logger.info('2/3: Requesting upload URL...');
         const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
         const uploadUrl = await requestPresignedUrl(apiClient, {
-            branch: argv.branch,
-            commitSha: argv.commitSha,
+            project: argv.project,
+            version: argv.version,
         });
         logger.debug(`Received upload URL: ${uploadUrl.substring(0, 40)}...`);
 
@@ -86,12 +86,12 @@ async function main() {
                 describe: 'Base URL for the deployment service API',
                 type: 'string',
             })
-            .option('commit-sha', {
-                describe: 'Git commit SHA that triggered the deployment',
+            .option('project', {
+                describe: 'Project name/identifier',
                 type: 'string',
             })
-            .option('branch', {
-                describe: 'Git branch from which the deployment was initiated',
+            .option('version', {
+                describe: 'Version identifier for the deployment',
                 type: 'string',
             })
             .option('verbose', {
@@ -109,8 +109,8 @@ async function main() {
         config = loadConfig(cliArgs);
 
         // Validate required fields after merging all sources
-        if (!config.dir || !config.apiKey) {
-            throw new Error('Both --dir and --api-key are required. You can provide them via CLI arguments, config file, or environment variables.');
+        if (!config.dir) {
+            throw new Error('--dir is required. You can provide it via CLI arguments, config file, or environment variables.');
         }
 
         // Validate directory exists and is valid
