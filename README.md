@@ -35,12 +35,14 @@ yarn add https://github.com/epinnock/scry-node --dev
 ```
 
 > **Note:** Some package managers (like pnpm) may limit postinstall scripts. If the configuration file is not automatically created, manually run the setup:
+>
 > ```bash
 > npx storybook-deploy-setup
 > ```
-> Or manually create the config file at `~/.storybook-deployer.json` with your preferred defaults (see [Configuration File](#configuration-file) section below).
+>
+> Or manually create the config file at `.storybook-deployer.json` in your project directory with your preferred defaults (see [Configuration File](#configuration-file) section below).
 
-**Automatic Configuration**: Upon installation, a configuration file (`~/.storybook-deployer.json`) is automatically created in your home directory. This allows you to set default values and reduce the need for repetitive command-line arguments.
+**Automatic Configuration**: Upon installation, a configuration file (`.storybook-deployer.json`) is automatically created in your project directory. This allows you to set default values and reduce the need for repetitive command-line arguments.
 
 ## Usage
 
@@ -70,12 +72,12 @@ The CLI is configured through a combination of command-line options and environm
 The configuration is resolved in the following order of precedence:
 1.  **Command-Line Arguments**: Highest precedence (e.g., `--api-key=some_key`).
 2.  **Environment Variables**: Sourced from the execution environment (e.g., `STORYBOOK_DEPLOYER_API_KEY=some_key`).
-3.  **Configuration File**: Values from `~/.storybook-deployer.json` (automatically created during installation).
+3.  **Configuration File**: Values from `.storybook-deployer.json` in your project directory (automatically created during installation).
 4.  **Programmatic Defaults**: Lowest precedence (e.g., for `--api-url`).
 
 ### Configuration File
 
-The configuration file (`~/.storybook-deployer.json`) is automatically created in your home directory when you install the package. You can edit this file to set default values for common options:
+The configuration file (`.storybook-deployer.json`) is automatically created in your project directory when you install the package. You can edit this file to set default values for common options:
 
 ```json
 {
@@ -98,7 +100,7 @@ The configuration file (`~/.storybook-deployer.json`) is automatically created i
 
 **Basic usage with config file:**
 ```bash
-# Set apiKey in ~/.storybook-deployer.json, then run:
+# Set apiKey in .storybook-deployer.json, then run:
 npx storybook-deploy --dir ./storybook-static
 ```
 
