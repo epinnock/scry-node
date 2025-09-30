@@ -28,15 +28,15 @@ async function runDeployment(argv) {
         // 2. Authenticate and get presigned URL
         logger.info('2/3: Requesting upload URL...');
         const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-        const uploadUrl = await requestPresignedUrl(apiClient, {
+        const presignedData = await requestPresignedUrl(apiClient, {
             project: argv.project,
             version: argv.version,
         });
-        logger.debug(`Received upload URL: ${uploadUrl.substring(0, 40)}...`);
+        logger.debug(`Received upload URL: ${presignedData.url.substring(0, 40)}...`);
 
         // 3. Upload the archive
         logger.info('3/3: Uploading archive...');
-        await uploadFile(uploadUrl, outPath);
+        await uploadFile(presignedData, outPath);
         logger.success('✅ Archive uploaded.');
 
         logger.success('\n🎉 Deployment successful! 🎉');
