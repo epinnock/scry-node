@@ -1,0 +1,17 @@
+{
+  "apiUrl": "https://storybook-deployment-service.epinnock.workers.dev",
+  "apiKey": "",
+  "dir": "./storybook-static",
+  "project": "my-project",
+  "version": "v1.0.0",
+  "verbose": false,
+  "withAnalysis": false,
+  "storiesDir": "./src",
+  "screenshotsDir": "./screenshots",
+  "storybookUrl": "http://localhost:6006",
+  "storycapOptions": {
+    "puppeteerLaunchConfig": {
+      "args": ["--no-sandbox", "--disable-setuid-sandbox"]
+    }
+  }
+}
