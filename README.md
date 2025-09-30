@@ -16,6 +16,26 @@ Assuming the package is published to npm, you can install it as a development de
 npm install @scry/storybook-deployer --save-dev
 ```
 
+**Install from GitHub:**
+
+You can also install directly from the GitHub repository:
+
+```bash
+# Using npm
+npm install github:epinnock/scry-node --save-dev
+
+# Or with the full URL
+npm install https://github.com/epinnock/scry-node --save-dev
+
+# Using pnpm
+pnpm add github:epinnock/scry-node -D
+
+# Using yarn
+yarn add https://github.com/epinnock/scry-node --dev
+```
+
+**Automatic Configuration**: Upon installation, a configuration file (`~/.storybook-deployer.json`) is automatically created in your home directory. This allows you to set default values and reduce the need for repetitive command-line arguments.
+
 ## Usage
 
 The CLI provides a single command to handle the deployment. It can be run using `npx` from within your project's directory.
@@ -44,7 +64,53 @@ The CLI is configured through a combination of command-line options and environm
 The configuration is resolved in the following order of precedence:
 1.  **Command-Line Arguments**: Highest precedence (e.g., `--api-key=some_key`).
 2.  **Environment Variables**: Sourced from the execution environment (e.g., `STORYBOOK_DEPLOYER_API_KEY=some_key`).
-3.  **Programmatic Defaults**: Lowest precedence (e.g., for `--api-url`).
+3.  **Configuration File**: Values from `~/.storybook-deployer.json` (automatically created during installation).
+4.  **Programmatic Defaults**: Lowest precedence (e.g., for `--api-url`).
+
+### Configuration File
+
+The configuration file (`~/.storybook-deployer.json`) is automatically created in your home directory when you install the package. You can edit this file to set default values for common options:
+
+```json
+{
+  "apiKey": "your-api-key-here",
+  "apiUrl": "https://api.your-service.com/v1",
+  "dir": "./storybook-static",
+  "verbose": false
+}
+```
+
+**Property Reference:**
+- `apiKey` → `--api-key` CLI option
+- `apiUrl` → `--api-url` CLI option
+- `dir` → `--dir` CLI option
+- `commitSha` → `--commit-sha` CLI option
+- `branch` → `--branch` CLI option
+- `verbose` → `--verbose` CLI option
+
+### Usage Examples
+
+**Basic usage with config file:**
+```bash
+# Set apiKey in ~/.storybook-deployer.json, then run:
+npx storybook-deploy --dir ./storybook-static
+```
+
+**Override specific options:**
+```bash
+# Use config file defaults but override API URL:
+npx storybook-deploy --api-url https://staging-api.service.com/v1
+```
+
+**Full command-line configuration:**
+```bash
+npx storybook-deploy \
+  --dir ./storybook-static \
+  --api-key $API_KEY \
+  --commit-sha $GITHUB_SHA \
+  --branch $GITHUB_REF_NAME \
+  --verbose
+```
 
 ## Example CI/CD Integration (GitHub Actions)
 

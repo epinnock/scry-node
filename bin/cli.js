@@ -9,6 +9,7 @@ const { zipDirectory } = require('../lib/archive.js');
 const { getApiClient, requestPresignedUrl, uploadFile } = require('../lib/apiClient.js');
 const { createLogger } = require('../lib/logger.js');
 const { AppError, ApiError } = require('../lib/errors.js');
+const { loadConfig } = require('../lib/config.js');
 
 async function runDeployment(argv) {
     const logger = createLogger(argv);
@@ -69,9 +70,10 @@ function handleError(error, argv) {
 }
 
 async function main() {
-    let argv;
+    let config;
     try {
-        argv = await yargs(hideBin(process.argv))
+        // First parse CLI args to get raw user input
+        const cliArgs = await yargs(hideBin(process.argv))
             .option('dir', {
                 describe: 'Path to the built Storybook directory (e.g., storybook-static)',
                 type: 'string',
@@ -83,7 +85,6 @@ async function main() {
             .option('api-url', {
                 describe: 'Base URL for the deployment service API',
                 type: 'string',
-                default: 'https://api.default-service.com/v1',
             })
             .option('commit-sha', {
                 describe: 'Git commit SHA that triggered the deployment',
@@ -96,31 +97,34 @@ async function main() {
             .option('verbose', {
                 describe: 'Enable verbose logging',
                 type: 'boolean',
-                default: false,
-            })
-            .demandOption(['dir', 'api-key'], 'Please provide both --dir and --api-key to work with this tool')
-            .check((argv) => {
-                const { dir } = argv;
-                if (!fs.existsSync(dir)) {
-                    // Note: yargs validation errors are not AppError instances
-                    throw new Error(`Directory not found at path: ${dir}`);
-                }
-                if (!fs.lstatSync(dir).isDirectory()) {
-                    throw new Error(`Path is not a directory: ${dir}`);
-                }
-                return true;
             })
             .env('STORYBOOK_DEPLOYER')
             .help()
             .alias('help', 'h')
             .version()
             .alias('version', 'v')
-            .parse(); // We parse synchronously to get argv first.
+            .parse();
 
-        await runDeployment(argv);
+        // Load and merge configuration from CLI args, config file, and defaults
+        config = loadConfig(cliArgs);
+
+        // Validate required fields after merging all sources
+        if (!config.dir || !config.apiKey) {
+            throw new Error('Both --dir and --api-key are required. You can provide them via CLI arguments, config file, or environment variables.');
+        }
+
+        // Validate directory exists and is valid
+        if (!fs.existsSync(config.dir)) {
+            throw new Error(`Directory not found at path: ${config.dir}`);
+        }
+        if (!fs.lstatSync(config.dir).isDirectory()) {
+            throw new Error(`Path is not a directory: ${config.dir}`);
+        }
+
+        await runDeployment(config);
 
     } catch (error) {
-        handleError(error, argv);
+        handleError(error, config);
     }
 }
 
