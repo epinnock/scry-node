@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const os =require('os');
 const { zipDirectory } = require('../lib/archive.js');
-const { getApiClient, requestPresignedUrl, uploadFile } = require('../lib/apiClient.js');
+const { getApiClient, uploadFileDirectly } = require('../lib/apiClient.js');
 const { createLogger } = require('../lib/logger.js');
 const { AppError, ApiError } = require('../lib/errors.js');
 const { loadConfig } = require('../lib/config.js');
@@ -25,19 +25,15 @@ async function runDeployment(argv) {
         logger.success(`✅ Archive created: ${outPath}`);
         logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
 
-        // 2. Authenticate and get presigned URL
-        logger.info('2/3: Requesting upload URL...');
+        // 2. Authenticate and upload directly
+        logger.info('2/3: Uploading to deployment service...');
         const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-        const presignedData = await requestPresignedUrl(apiClient, {
+        const uploadResult = await uploadFileDirectly(apiClient, {
             project: argv.project,
             version: argv.version,
-        });
-        logger.debug(`Received upload URL: ${presignedData.url.substring(0, 40)}...`);
-
-        // 3. Upload the archive
-        logger.info('3/3: Uploading archive...');
-        await uploadFile(presignedData, outPath);
+        }, outPath);
         logger.success('✅ Archive uploaded.');
+        logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
 
         logger.success('\n🎉 Deployment successful! 🎉');
 

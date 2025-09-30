@@ -59,8 +59,7 @@ To use this package with the Storybook deployment API at `https://storybook-depl
 ```
 
 **API Endpoints Used:**
-1. **Presigned URL**: `POST /presigned-url/{project}/{version}/storybook.zip`
-2. **Direct Upload**: `PUT` to the presigned URL returned from step 1
+1. **Direct Upload**: `POST /upload/{project}/{version}` with binary zip data
 
 **Example Usage:**
 
