@@ -6,7 +6,7 @@
   "version": "v1.0.0",
   "verbose": false,
   "withAnalysis": false,
-  "storiesDir": "./src",
+  "storiesDir": null,
   "screenshotsDir": "./screenshots",
   "storybookUrl": "http://localhost:6006",
   "storycapOptions": {
