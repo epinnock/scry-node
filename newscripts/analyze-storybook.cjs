@@ -474,10 +474,16 @@ async function analyzeStorybook(config) {
   }
   
   // Step 2: Crawl stories
-  console.log(`📋 Analyzing story files in: ${storiesDir}`);
+  console.log(`📋 Analyzing story files...`);
   const crawlTimer = new PerformanceTimer('Story Crawling').start();
   const stories = crawlStories(storiesDir);
   timings.crawling = crawlTimer.endAndLog(enablePerformanceLogging);
+  
+  if (stories.length === 0) {
+    console.log('⚠️  No stories found. Make sure your story files match the .stories.* pattern.');
+    return [];
+  }
+  
   console.log(`Found ${stories.length} story entries in ${formatDuration(timings.crawling.wallTime)}\n`);
   
   // Step 3: Map screenshots
@@ -868,7 +874,7 @@ function parseArguments(args) {
   const config = {
     // Set defaults from environment variables, with hardcoded fallbacks
     storybookUrl: process.env.STORYBOOK_URL || undefined,
-    storiesDir: process.env.STORIES_DIR || './stories',
+    storiesDir: process.env.STORIES_DIR || null, // null enables auto-detection
     screenshotsDir: process.env.SCREENSHOTS_DIR || './__screenshots__',
     jinaApiKey: process.env.JINA_API_KEY || undefined,
     openaiApiKey: process.env.OPENAI_API_KEY || undefined,
@@ -1305,7 +1311,7 @@ API KEYS:
   --api-key <key>          Jina API key (backwards compatibility)
 
 GENERAL OPTIONS:
-  --stories-dir <path>     Directory containing story files (default: ./stories)
+  --stories-dir <path>     Directory containing story files (default: auto-detect .stories.* files)
   --screenshots-dir <path> Directory for screenshots (default: ./__screenshots__)
   --batch-size <number>    Batch size for embedding generation (default: 10)
   --output <file>          Output file for results (default: stdout)
@@ -1317,6 +1323,10 @@ GENERAL OPTIONS:
   --skip-r2                Skip Cloudflare R2 screenshot upload
   --performance            Enable detailed CPU vs wall time performance logging
   --help, -h               Show this help message
+
+NOTE: Story files are automatically detected anywhere in the project using the .stories.* pattern.
+      Supported extensions: .ts, .tsx, .js, .jsx, .mjs, .cjs
+      Common directories (node_modules, dist, etc.) are automatically excluded.
 
 CLOUDFLARE R2 UPLOAD OPTIONS:
   --r2-account-id <id>             Cloudflare Account ID

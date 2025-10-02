@@ -96,12 +96,12 @@ function findMatchingScreenshot(storyEntry, storyTitle, screenshotFiles) {
 
 /**
  * Main function to map stories to their screenshots
- * @param {string} storiesDir - Directory containing stories
+ * @param {string} storiesDir - Directory containing stories (optional, will auto-detect if not provided)
  * @param {string} screenshotsDir - Directory containing screenshots
  * @returns {Array} Array of story entries with screenshot paths
  */
-function mapStoriesToScreenshots(storiesDir = './stories', screenshotsDir = './__screenshots__') {
-  // Get all story entries
+function mapStoriesToScreenshots(storiesDir = null, screenshotsDir = './__screenshots__') {
+  // Get all story entries (will auto-detect if storiesDir is null)
   const storyEntries = crawlStories(storiesDir);
   
   // Get all screenshot files
@@ -148,7 +148,7 @@ if (require.main === module) {
   
   // Filter out flags to get positional arguments
   const positionalArgs = args.filter(arg => !arg.startsWith('--'));
-  const storiesDir = positionalArgs[0] || './stories';
+  const storiesDir = positionalArgs[0] || null; // null will trigger auto-detection
   const screenshotsDir = positionalArgs[1] || './__screenshots__';
   
   const mappedEntries = mapStoriesToScreenshots(storiesDir, screenshotsDir);

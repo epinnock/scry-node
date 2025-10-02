@@ -13,6 +13,7 @@ This tool is designed for execution within a CI/CD pipeline (such as GitHub Acti
 ## Features
 
 - 🚀 Simple Storybook static build deployment
+- 🔍 **Auto-detection of `.stories.*` files** - No need to specify stories directory
 - 📊 Story metadata extraction and analysis
 - 📸 Automated screenshot capture with storycap
 - 📦 Organized master ZIP packaging (staticsite, images, metadata)
@@ -128,12 +129,29 @@ The CLI is configured through a combination of command-line options and environm
 | `--project`    | `STORYBOOK_DEPLOYER_PROJECT`          | The project name/identifier.                                   | No       | `main`                               |
 | `--version`    | `STORYBOOK_DEPLOYER_VERSION`          | The version identifier for the deployment.                     | No       | `latest`                             |
 | `--with-analysis` | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | Enable Storybook analysis (story crawling + screenshots).      | No       | `false`                              |
-| `--stories-dir` | `STORYBOOK_DEPLOYER_STORIES_DIR`     | Path to stories directory for analysis.                        | No       | `./src`                              |
+| `--stories-dir` | `STORYBOOK_DEPLOYER_STORIES_DIR`     | Path to stories directory (optional, auto-detects .stories.* files). | No | Auto-detect                          |
 | `--screenshots-dir` | `STORYBOOK_DEPLOYER_SCREENSHOTS_DIR` | Directory for captured screenshots.                        | No       | `./screenshots`                      |
 | `--storybook-url` | `STORYBOOK_DEPLOYER_STORYBOOK_URL` | URL of running Storybook server for screenshot capture.        | No       | `http://localhost:6006`              |
 | `--verbose`    | `STORYBOOK_DEPLOYER_VERBOSE`          | Enable verbose logging for debugging purposes.                 | No       | `false`                              |
 | `--help`, `-h` | -                                     | Show the help message.                                       | -        | -                                    |
 | `--version`, `-v`| -                                     | Show the version number.                                     | -        | -                                    |
+
+### Story File Auto-Detection
+
+The analysis feature now automatically detects `.stories.*` files anywhere in your project! You no longer need to specify a stories directory - the system intelligently searches for story files with these features:
+
+**Supported File Patterns:**
+- `.stories.ts`, `.stories.tsx`
+- `.stories.js`, `.stories.jsx`
+- `.stories.mjs`, `.stories.cjs`
+
+**Auto-Detection Benefits:**
+- **Automatic Discovery**: Finds story files anywhere in your project
+- **Intelligent Exclusions**: Skips common directories (`node_modules`, `dist`, `build`, `.git`, etc.)
+- **Flexible Structure**: Works with any project organization
+- **Performance Optimized**: Searches up to 5 levels deep by default
+
+You can still specify a custom directory with `--stories-dir` if needed.
 
 ### Configuration Hierarchy
 
@@ -177,17 +195,29 @@ npx storybook-deploy --dir ./storybook-static
 
 **Deploy with Storybook analysis:**
 ```bash
-# Deploy with story metadata and screenshots
+# Deploy with story metadata and screenshots (auto-detects story files)
 npx storybook-deploy \
   --dir ./storybook-static \
   --with-analysis \
-  --stories-dir ./src \
+  --storybook-url http://localhost:6006
+
+# Or specify a custom stories directory
+npx storybook-deploy \
+  --dir ./storybook-static \
+  --with-analysis \
+  --stories-dir ./src/components \
   --storybook-url http://localhost:6006
 ```
 
 **Standalone analysis (no deployment):**
 ```bash
-# Analyze stories and capture screenshots only
+# Analyze stories and capture screenshots (auto-detects story files)
+npx storybook-deploy analyze \
+  --project my-project \
+  --version v1.0.0 \
+  --storybook-url http://localhost:6006
+
+# Or with custom stories directory
 npx storybook-deploy analyze \
   --project my-project \
   --version v1.0.0 \
@@ -266,8 +296,8 @@ This tool is ideal for use in a GitHub Actions workflow. The API key should be s
     npx storybook-deploy \
       --dir ./storybook-static \
       --with-analysis \
-      --stories-dir ./src \
       --storybook-url http://localhost:6006
+  # Note: --stories-dir is optional; story files are auto-detected
 ```
 
 See the example workflow file: `.github/workflows/deploy-example.yml`

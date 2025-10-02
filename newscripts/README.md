@@ -2,6 +2,62 @@
 
 This directory contains Node.js scripts for analyzing Storybook stories, mapping screenshots, generating visual embeddings using AI, and utility scripts for file operations. The scripts work together to provide comprehensive metadata and visual analysis of your Storybook components, plus additional utilities for cloud storage operations.
 
+## Story File Auto-Detection
+
+The scripts now automatically detect `.stories.*` files anywhere in your project! You no longer need to specify a stories directory - the system will intelligently search for story files with the following features:
+
+### Supported File Patterns
+- `.stories.ts`
+- `.stories.tsx`
+- `.stories.js`
+- `.stories.jsx`
+- `.stories.mjs`
+- `.stories.cjs`
+
+### Auto-Detection Features
+- **Automatic Discovery**: Searches the entire project for story files
+- **Intelligent Exclusions**: Automatically skips common directories like:
+  - `node_modules`
+  - `.git`
+  - `dist`
+  - `build`
+  - `coverage`
+  - `.next`
+  - `out`
+  - `__screenshots__`
+  - `.storybook`
+  - `public`
+  - `static`
+- **Flexible Location**: Story files can be anywhere in your project structure
+- **Depth Limiting**: Searches up to 5 levels deep by default for performance
+
+### Usage
+
+#### Automatic Mode (Recommended)
+Simply run the scripts without specifying a stories directory:
+
+```bash
+# Auto-detect story files
+node newscripts/crawl-stories.cjs
+
+# Auto-detect and map to screenshots
+node newscripts/map-screenshots.cjs
+
+# Full analysis with auto-detection
+node newscripts/analyze-storybook.cjs --storybook-url https://your-storybook.vercel.app/
+```
+
+#### Manual Directory Mode
+You can still specify a directory if needed:
+
+```bash
+# Use specific directory
+node newscripts/crawl-stories.cjs ./src/components
+
+# With environment variable
+STORIES_DIR=./src/stories node newscripts/analyze-storybook.cjs
+```
+
 ## Overview
 
 ### Scripts
@@ -1256,6 +1312,3 @@ node scripts/batch-inspect-components.js \
 **What it does:** Analyzes your Storybook project to extract component metadata, capture/map visual screenshots, upload screenshots to Cloudflare R2 storage, generate AI embeddings, create detailed LLM-powered component documentation, and upload everything to a vector database for semantic search. Perfect for component documentation, visual testing, design system analysis, and building intelligent, searchable component libraries with cloud-hosted assets.
 
 **Output:** JSON with story locations, component names, screenshot paths, R2 public URLs, 1024-dimensional visual embeddings, comprehensive LLM-generated component analysis including UI patterns, accessibility features, and design tokens, plus optional vector database upload results for semantic search capabilities.
-
-
-lets  get started on a newsddfsd
