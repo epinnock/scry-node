@@ -57,8 +57,9 @@ Successfully integrated Storybook analysis functionality into the storybook-depl
 ### Master ZIP Structure
 ```
 project-version.zip
-├── staticsite/          # Full storybook-static contents (deploy with --with-analysis)
-│   ├── index.html
+├── index.html           # Storybook static build at root (CDN-compliant)
+├── iframe.html
+├── static/
 │   └── ...
 ├── images/              # All screenshots
 │   └── Components/
@@ -67,6 +68,8 @@ project-version.zip
 │           └── Secondary.png
 └── metadata.json       # Analysis metadata
 ```
+
+**Important:** The static site files are placed at the **root of the ZIP** to ensure CDN compatibility. This allows the CDN to properly serve `index.html` and other assets from the root level.
 
 ### Metadata JSON Structure
 ```json

@@ -243,13 +243,13 @@ npx storybook-deploy \
 
 ### Master ZIP Structure
 
-When analysis is enabled (`--with-analysis`), the tool creates a master ZIP file named `{project}-{version}.zip` with the following structure:
+When analysis is enabled (`--with-analysis`), the tool creates a master ZIP file named `{project}-{version}.zip` with the following CDN-compliant structure:
 
 ```
 my-project-v1.0.0.zip
-├── staticsite/          # Your Storybook static build
-│   ├── index.html
-│   ├── iframe.html
+├── index.html           # Storybook static build at root (CDN-compliant)
+├── iframe.html
+├── static/
 │   └── ...
 ├── images/              # Captured screenshots
 │   ├── story1.png
@@ -263,7 +263,9 @@ my-project-v1.0.0.zip
 - Screenshot mappings (which image corresponds to which story)
 - Analysis timestamp and configuration
 
-Without analysis, only the static site is zipped and uploaded as `{project}-{version}.zip`.
+**Important:** The static site files (`index.html`, etc.) are placed at the **root of the ZIP** to ensure CDN compatibility. This allows the CDN to find `index.html` at the root level as expected.
+
+Without analysis, only the static site is zipped and uploaded as `{project}-{version}.zip` with files at root.
 
 ## Example CI/CD Integration (GitHub Actions)
 
