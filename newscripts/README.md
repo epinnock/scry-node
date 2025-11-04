@@ -131,6 +131,38 @@ CHROMIUM_PATH=/snap/chromium/current/usr/lib/chromium-browser/chrome
 - Easy team sharing via `.env.example`
 - Override individual settings when needed
 
+## Testing & Diagnostics
+
+### Test R2 Credentials and Upload
+
+If you're encountering R2 credential errors, use the comprehensive test script:
+
+```bash
+node newscripts/test-credentials-and-upload.cjs
+```
+
+This script will:
+- ✅ Validate that your R2 credentials have the correct length (32 hex chars for access key)
+- ✅ Test connection to R2 bucket
+- ✅ Perform a test file upload
+- ✅ Provide detailed diagnostic information
+
+**Common Issues:**
+- **"Credential access key has length 39, should be 32"** - Your backend service has invalid credentials
+- See [`CREDENTIAL_ERROR_GUIDE.md`](../CREDENTIAL_ERROR_GUIDE.md) for detailed troubleshooting
+
+### Test R2 Presigned URLs
+
+```bash
+node newscripts/test-r2-presigned.cjs
+```
+
+### Test R2 Upload Class
+
+```bash
+node newscripts/test-r2-upload.js
+```
+
 ## Scripts Documentation
 
 ### `analyze-storybook.js`

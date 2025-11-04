@@ -1,0 +1,9 @@
+{
+  "apiUrl": "https://storybook-deployment-service.epinnock.workers.dev",
+  "apiKey": "",
+  "dir": "./test-storybook-static",
+  "project": "test-project",
+  "version": "test-v1",
+  "verbose": true,
+  "withAnalysis": false
+}
