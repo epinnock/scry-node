@@ -303,3 +303,193 @@ This tool is ideal for use in a GitHub Actions workflow. The API key should be s
 ```
 
 See the example workflow file: `.github/workflows/deploy-example.yml`
+
+### PR Preview Deployments
+
+Automatically deploy Storybook previews for every pull request to get instant visual feedback on UI changes. The PR preview workflow is included in this repository at [`.github/workflows/deploy-pr-preview.yml`](.github/workflows/deploy-pr-preview.yml).
+
+**Features:**
+- 🚀 Automatic deployment on PR creation and updates
+- 💬 PR comment with deployment URL and metadata
+- 🔄 Auto-updates the same comment on new commits
+- ⚡ Fast builds (static site only, no analysis)
+- 🏷️ Unique URLs per PR: `https://your-cdn.com/{project}/pr-{number}/`
+
+#### Prerequisites
+
+Before setting up PR preview deployments, ensure you have:
+
+1. **A Storybook project** with a build command (e.g., `npm run build-storybook`)
+2. **Access to repository settings** to configure GitHub Actions variables and secrets
+3. **Backend deployment service** running and accessible (e.g., `https://storybook-deployment-service.epinnock.workers.dev`)
+4. **Project identifier** for your Storybook deployment
+
+#### Step-by-Step Setup
+
+**Step 1: Copy the workflow file to your project**
+
+If you're using this as a template, copy the workflow file to your repository:
+
+```bash
+mkdir -p .github/workflows
+cp .github/workflows/deploy-pr-preview.yml YOUR_PROJECT/.github/workflows/
+```
+
+If you're installing from GitHub, the workflow file is already included.
+
+**Step 2: Configure GitHub Actions Variables**
+
+1. Navigate to your GitHub repository
+2. Go to **Settings** → **Secrets and variables** → **Actions**
+3. Click on the **Variables** tab
+4. Click **New repository variable**
+5. Add the following variable:
+
+| Variable Name | Value | Example |
+|--------------|-------|---------|
+| `SCRY_PROJECT_ID` | Your project identifier | `my-storybook` or `company-design-system` |
+
+**Step 3: Configure GitHub Actions Secrets (Optional)**
+
+If your backend requires authentication:
+
+1. In the same **Settings** → **Secrets and variables** → **Actions** page
+2. Click on the **Secrets** tab  
+3. Click **New repository secret**
+4. Add the following secret:
+
+| Secret Name | Value | Description |
+|------------|-------|-------------|
+| `SCRY_API_KEY` | Your API authentication key | Only needed if backend requires authentication |
+
+**Step 4: Verify Your Storybook Build Command**
+
+The workflow assumes your package.json has a `build-storybook` script. Verify this command exists:
+
+```json
+{
+  "scripts": {
+    "build-storybook": "storybook build"
+  }
+}
+```
+
+If your build command is different, update line 29 in `.github/workflows/deploy-pr-preview.yml`:
+
+```yaml
+- name: Build Storybook
+  run: npm run build-storybook  # Change this if your command differs
+```
+
+**Step 5: Verify Deployment URL Pattern**
+
+The workflow constructs deployment URLs using this pattern:
+```
+https://storybook-deployment-service.epinnock.workers.dev/{PROJECT_ID}/pr-{PR_NUMBER}
+```
+
+If your backend uses a different URL pattern, update line 41 in the workflow:
+
+```yaml
+DEPLOY_URL="https://your-backend.com/${PROJECT_ID}/pr-${{ github.event.pull_request.number }}"
+```
+
+**Step 6: Test with a Pull Request**
+
+1. Create a new branch in your repository:
+   ```bash
+   git checkout -b test-pr-preview
+   ```
+
+2. Make a small change (e.g., update README or add a comment)
+
+3. Push the branch and create a pull request:
+   ```bash
+   git add .
+   git commit -m "Test PR preview deployment"
+   git push origin test-pr-preview
+   ```
+
+4. Open a PR on GitHub and watch the Actions tab for the workflow execution
+
+5. Once complete, check for a comment on the PR with your deployment URL
+
+#### Environment Variables Reference
+
+The PR preview workflow uses these environment variables (configured via GitHub Variables and Secrets):
+
+| Environment Variable | Source | Required | Description |
+|---------------------|--------|----------|-------------|
+| `SCRY_PROJECT_ID` | GitHub Variable | **Yes** | Project identifier for deployments |
+| `SCRY_API_URL` | Hardcoded in workflow | **Yes** | Backend API endpoint URL |
+| `SCRY_API_KEY` | GitHub Secret | No | API authentication key (if required) |
+
+The CLI also supports these environment variables for backward compatibility:
+- `STORYBOOK_DEPLOYER_*` (legacy prefix)
+- `SCRY_*` prefix takes precedence
+
+**How it works:**
+
+1. When a PR is opened or updated, the workflow:
+   - Builds the Storybook static site
+   - Deploys to `{project}/pr-{number}` version
+   - Posts a comment with the preview URL
+
+2. The comment includes:
+   - Direct link to the deployed preview
+   - Commit SHA and branch name
+   - Deployment timestamp
+
+3. On subsequent commits to the PR:
+   - The workflow redeploys to the same PR version
+   - Updates the existing comment with new deployment details
+
+**Example PR Comment:**
+
+```markdown
+## 🚀 Storybook Preview Deployed
+
+**Preview URL:** https://storybook-deployment-service.epinnock.workers.dev/my-project/pr-123
+
+📌 **Details:**
+- **Commit:** `abc1234`
+- **Branch:** `feature/new-component`
+- **Deployed at:** Wed, 13 Nov 2024 05:00:00 GMT
+
+> This preview will be updated automatically on each commit to this PR.
+```
+
+#### Troubleshooting
+
+**Problem: Workflow fails with "SCRY_PROJECT_ID not found"**
+- Solution: Ensure you've added `SCRY_PROJECT_ID` as a repository variable (not secret)
+- Variables and Secrets are different - make sure you're in the Variables tab
+
+**Problem: Deployment succeeds but no comment is posted**
+- Solution: Check that the workflow has `pull-requests: write` permission
+- This is already configured in the workflow file but may be restricted by organization settings
+
+**Problem: Comment is posted multiple times instead of updating**
+- Solution: This is expected if the bot user changes. The workflow looks for existing comments from the same bot
+
+**Problem: Build fails with "command not found: build-storybook"**
+- Solution: Update your package.json to include the build-storybook script, or modify the workflow to use your build command
+
+**Problem: Deployment URL returns 404**
+- Solution: Verify your backend deployment service is running and the URL pattern matches your backend's routing
+
+#### Workflow File Reference
+
+See the complete workflow configuration: [`.github/workflows/deploy-pr-preview.yml`](.github/workflows/deploy-pr-preview.yml)
+
+Key workflow features:
+- **Triggers**: `pull_request` with types `[opened, synchronize, reopened]`
+- **Permissions**: `contents: read`, `pull-requests: write`
+- **Node version**: 18 (configurable in workflow)
+- **Comment management**: Smart update/create logic to avoid duplicate comments
+
+#### Cleanup
+
+PR preview deployments remain available after the PR is closed. To implement automatic cleanup when PRs are closed, consider adding a cleanup workflow that posts a comment notifying users that the preview is no longer maintained.
+
+A cleanup workflow template will be added in a future update.

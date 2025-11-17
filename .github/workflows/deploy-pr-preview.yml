@@ -1,0 +1,101 @@
+# GitHub Actions workflow for deploying Storybook PR previews
+
+name: Deploy Storybook PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  deploy-pr-preview:
+    runs-on: ubuntu-latest
+    
+    # Add permissions for posting comments
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Storybook
+        run: npm run build-storybook
+
+      - name: Deploy Storybook Preview
+        id: deploy
+        run: |
+          # Deploy to backend with PR number as version
+          npx storybook-deploy \
+            --dir ./storybook-static \
+            --version pr-${{ github.event.pull_request.number }}
+          
+          # Construct the deployment URL using the project from env/config
+          PROJECT_ID="${SCRY_PROJECT_ID}"
+          DEPLOY_URL="https://storybook-deployment-service.epinnock.workers.dev/${PROJECT_ID}/pr-${{ github.event.pull_request.number }}"
+          echo "deployment_url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+        env:
+          SCRY_API_URL: https://storybook-deployment-service.epinnock.workers.dev
+          SCRY_PROJECT_ID: ${{ vars.SCRY_PROJECT_ID }}
+          SCRY_API_KEY: ${{ secrets.SCRY_API_KEY }}
+
+      - name: Post PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deploymentUrl = '${{ steps.deploy.outputs.deployment_url }}';
+            const prNumber = context.issue.number;
+            const commitSha = context.payload.pull_request.head.sha.substring(0, 7);
+            
+            // Create comment body
+            const commentBody = `## 🚀 Storybook Preview Deployed
+            
+            **Preview URL:** ${deploymentUrl}
+            
+            📌 **Details:**
+            - **Commit:** \`${commitSha}\`
+            - **Branch:** \`${{ github.event.pull_request.head.ref }}\`
+            - **Deployed at:** ${new Date().toUTCString()}
+            
+            > This preview will be updated automatically on each commit to this PR.`;
+            
+            // Check if a comment from this bot already exists
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🚀 Storybook Preview Deployed')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+              console.log('Updated existing PR comment');
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: commentBody
+              });
+              console.log('Created new PR comment');
+            }
