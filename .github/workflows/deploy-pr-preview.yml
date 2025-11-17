@@ -19,17 +19,22 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
+       - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: '22'
+          cache: 'pnpm'
 
       - name: Install Dependencies
-        run: npm install
+        run: pnpm install
 
       - name: Build Storybook
-        run: npm run build-storybook
+        run: pnpm build-storybook
 
       - name: Deploy Storybook Preview
         id: deploy
