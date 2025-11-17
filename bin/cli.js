@@ -13,6 +13,7 @@ const { AppError, ApiError } = require('../lib/errors.js');
 const { loadConfig } = require('../lib/config.js');
 const { captureScreenshots } = require('../lib/screencap.js');
 const { analyzeStorybook } = require('../lib/analysis.js');
+const { runInit } = require('../lib/init.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -283,6 +284,56 @@ async function main() {
                 config = loadConfig(argv);
 
                 await runAnalysis(config);
+            })
+            .command('init', 'Setup GitHub Actions workflows for automatic deployment', (yargs) => {
+                return yargs
+                    .option('project-id', {
+                        describe: 'Project ID from Scry dashboard',
+                        type: 'string',
+                        demandOption: true,
+                        alias: 'projectId'
+                    })
+                    .option('api-key', {
+                        describe: 'API key from Scry dashboard',
+                        type: 'string',
+                        demandOption: true,
+                        alias: 'apiKey'
+                    })
+                    .option('api-url', {
+                        describe: 'Scry API URL',
+                        type: 'string',
+                        default: 'https://storybook-deployment-service.epinnock.workers.dev',
+                        alias: 'apiUrl'
+                    })
+                    .option('skip-gh-setup', {
+                        describe: 'Skip GitHub CLI variable setup',
+                        type: 'boolean',
+                        default: false,
+                        alias: 'skipGhSetup'
+                    })
+                    .option('commit-api-key', {
+                        describe: 'Commit API key in config file (not recommended)',
+                        type: 'boolean',
+                        default: true,
+                        alias: 'commitApiKey'
+                    })
+                    .option('verbose', {
+                        describe: 'Enable verbose logging',
+                        type: 'boolean',
+                        default: false
+                    });
+            }, async (argv) => {
+                // Map projectId/apiKey to project/apiKey for consistency
+                const initConfig = {
+                    project: argv.projectId,
+                    apiKey: argv.apiKey,
+                    apiUrl: argv.apiUrl,
+                    skipGhSetup: argv.skipGhSetup,
+                    commitApiKey: argv.commitApiKey,
+                    verbose: argv.verbose
+                };
+
+                await runInit(initConfig);
             })
             .env('STORYBOOK_DEPLOYER')
             .help()
