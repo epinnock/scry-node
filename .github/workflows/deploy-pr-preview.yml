@@ -34,10 +34,10 @@ jobs:
       - name: Deploy Storybook Preview
         id: deploy
         run: |
-          # Deploy to backend with PR number as version
+          # Deploy to backend - version is auto-detected from GitHub Actions context
+          # The CLI will automatically detect this is a PR and use pr-{number} as the version
           npx storybook-deploy \
-            --dir ./storybook-static \
-            --version pr-${{ github.event.pull_request.number }}
+            --dir ./storybook-static
           
           # Construct the deployment URL using the project from env/config
           PROJECT_ID="${SCRY_PROJECT_ID}"
