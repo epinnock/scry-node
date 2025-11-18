@@ -1,60 +1,96 @@
-# Storybook Deployer CLI
+# Scry Storybook Deployer
+
+Deploy your Storybook to the cloud with one command. ⚡
+
+## 🎯 Quick Start (5 seconds)
+
+### 1. Get your credentials
+Visit the [Scry Dashboard](https://dashboard.scry.com) and:
+- 🔐 Login with your account (Firebase)
+- 📦 Create a new project
+- 📋 Copy your **Project ID** and **API Key**
+
+### 2. Run the setup command
+
+```bash
+npx @scry/storybook-deployer init --projectId YOUR_PROJECT_ID --apiKey YOUR_API_KEY
+```
+
+**That's it!** 🎉
+
+The `init` command automatically:
+- ✅ Creates configuration file (`.storybook-deployer.json`)
+- ✅ Generates GitHub Actions workflows
+- ✅ Sets up repository variables and secrets
+- ✅ Commits and pushes everything to GitHub
+- ✅ Triggers automatic deployment
+
+### What happens next?
+
+Your Storybook now deploys automatically:
+- 🚀 **Push to main** → Deploys to production (`/latest`)
+- 🔍 **Open a PR** → Deploys preview (`/pr-123`)
+- 🔄 **Update PR** → Updates preview automatically
+
+No additional configuration needed!
+
+---
+
+## 📚 About
 
 A client-side Command-Line Interface (CLI) tool to automate the deployment of Storybook static builds.
 
 This tool is designed for execution within a CI/CD pipeline (such as GitHub Actions). The core workflow involves:
 1.  Archiving a specified Storybook build directory.
 2.  Authenticating with a secure backend service.
-3.  Requesting a presigned URL for upload.
-4.  Uploading the archive directly to cloud storage.
+3.  Uploading the archive directly to cloud storage.
 
-**NEW**: Now includes Storybook analysis capabilities for extracting story metadata and capturing screenshots!
-
-## Features
-
+**Features:**
 - 🚀 Simple Storybook static build deployment
-- 🔍 **Auto-detection of `.stories.*` files** - No need to specify stories directory
+- 🔍 Auto-detection of `.stories.*` files
 - 📊 Story metadata extraction and analysis
 - 📸 Automated screenshot capture with storycap
 - 📦 Organized master ZIP packaging (staticsite, images, metadata)
 - ⚙️ Flexible configuration (CLI, env vars, config file)
 - 🔒 Secure presigned URL uploads
 
-## Installation
+---
 
-Assuming the package is published to npm, you can install it as a development dependency in your project:
+## 🚀 Manual Deployment (Testing)
+
+Want to test a deployment before setting up automation? Run:
 
 ```bash
+npx @scry/storybook-deployer --dir ./storybook-static --project YOUR_PROJECT_ID --api-key YOUR_API_KEY
+```
+
+This deploys your Storybook immediately without setting up GitHub Actions.
+
+---
+
+## 📦 Installation (Optional)
+
+**You don't need to install anything!** Just use `npx` to run the init command:
+
+```bash
+npx @scry/storybook-deployer init --projectId xxx --apiKey yyy
+```
+
+However, if you prefer to install it as a development dependency:
+
+```bash
+# From npm (when published)
 npm install @scry/storybook-deployer --save-dev
-```
 
-**Install from GitHub:**
-
-You can also install directly from the GitHub repository:
-
-```bash
-# Using npm
+# From GitHub
 npm install github:epinnock/scry-node --save-dev
-
-# Or with the full URL
-npm install https://github.com/epinnock/scry-node --save-dev
-
-# Using pnpm
+# or
 pnpm add github:epinnock/scry-node -D
-
-# Using yarn
-yarn add https://github.com/epinnock/scry-node --dev
+# or
+yarn add github:epinnock/scry-node --dev
 ```
 
-> **Note:** Some package managers (like pnpm) may limit postinstall scripts. If the configuration file is not automatically created, manually run the setup:
->
-> ```bash
-> npx storybook-deploy-setup
-> ```
->
-> Or manually create the config file at `.storybook-deployer.json` in your project directory with your preferred defaults (see [Configuration File](#configuration-file) section below).
-
-**Automatic Configuration**: Upon installation, a configuration file (`.storybook-deployer.json`) is automatically created in your project directory. This allows you to set default values and reduce the need for repetitive command-line arguments.
+**Note:** The `init` command handles all configuration automatically, so manual installation is only needed if you want the package in your `node_modules` for local development.
 
 ## Configuration for Your API
 
@@ -493,3 +529,84 @@ Key workflow features:
 PR preview deployments remain available after the PR is closed. To implement automatic cleanup when PRs are closed, consider adding a cleanup workflow that posts a comment notifying users that the preview is no longer maintained.
 
 A cleanup workflow template will be added in a future update.
+
+---
+
+## 🔧 Troubleshooting the Init Command
+
+### Command fails with "Not a git repository"
+
+**Solution:** Initialize git first:
+```bash
+git init
+git remote add origin https://github.com/your-username/your-repo.git
+```
+
+### GitHub CLI setup fails
+
+**Solution:** Install GitHub CLI and authenticate:
+```bash
+# macOS
+brew install gh
+
+# Linux
+sudo apt install gh  # Ubuntu/Debian
+sudo dnf install gh  # Fedora
+
+# Windows
+winget install --id GitHub.cli
+
+# Then authenticate
+gh auth login
+```
+
+Or skip GitHub CLI setup and set variables manually:
+```bash
+npx @scry/storybook-deployer init --projectId xxx --apiKey yyy --skip-gh-setup
+```
+
+Then manually add variables in GitHub Settings → Secrets and variables → Actions.
+
+### Git push fails with "Authentication failed"
+
+**Solution:** Configure Git credentials:
+```bash
+# For HTTPS
+gh auth setup-git
+
+# Or use SSH
+git remote set-url origin git@github.com:your-username/your-repo.git
+```
+
+### "No build command found" warning
+
+**Solution:** Add a build script to your `package.json`:
+```json
+{
+  "scripts": {
+    "build-storybook": "storybook build"
+  }
+}
+```
+
+### Want to customize the generated workflows?
+
+After running `init`, you can edit:
+- `.github/workflows/deploy-storybook.yml` - Main deployment
+- `.github/workflows/deploy-pr-preview.yml` - PR previews
+
+Then commit and push your changes:
+```bash
+git add .github/
+git commit -m "Customize Storybook workflows"
+git push
+```
+
+---
+
+## 🆘 Support
+
+Need help?
+- 📖 [Documentation](https://github.com/epinnock/scry-node)
+- 🐛 [Report an issue](https://github.com/epinnock/scry-node/issues)
+- 💬 [Discussions](https://github.com/epinnock/scry-node/discussions)
