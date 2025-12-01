@@ -532,6 +532,253 @@ A cleanup workflow template will be added in a future update.
 
 ---
 
+## 📢 Notifications (Slack & Microsoft Teams)
+
+Want to get notified when Storybook previews are deployed? You can add Slack and/or Microsoft Teams notifications to your workflows.
+
+### Overview
+
+Notifications are added as extra steps in your GitHub Actions workflow. This approach gives you full control over the message format and when notifications are sent.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  GitHub Actions Workflow                                       │
+│  ─────────────────────────────────────────────────────────────  │
+│  1. Build Storybook                                            │
+│  2. Deploy to Scry           ─────► deployment_url             │
+│  3. Comment on PR (existing)                                   │
+│  4. Notify Slack (optional)  ◄───── uses deployment_url        │
+│  5. Notify Teams (optional)  ◄───── uses deployment_url        │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Step 1: Create Webhooks
+
+#### Slack Webhook Setup
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+2. Name your app (e.g., "Scry Storybook") and select your workspace
+3. Go to **Incoming Webhooks** (left sidebar) → Toggle **Activate Incoming Webhooks** to ON
+4. Click **Add New Webhook to Workspace** → Select the channel for notifications
+5. Copy the webhook URL (starts with `https://hooks.slack.com/services/...`)
+
+#### Microsoft Teams Webhook Setup
+
+1. In Microsoft Teams, go to your channel
+2. Click the **⋯** (more options) → **Connectors** (or **Workflows** in new Teams)
+3. Search for **Incoming Webhook** → **Configure**
+4. Name it (e.g., "Scry Storybook"), optionally upload an icon
+5. Copy the webhook URL (starts with `https://outlook.office.com/webhook/...`)
+
+### Step 2: Add Secrets to GitHub
+
+Add your webhook URLs as GitHub Secrets:
+
+```bash
+# Using GitHub CLI
+gh secret set SLACK_WEBHOOK_URL --body "https://hooks.slack.com/services/..."
+gh secret set TEAMS_WEBHOOK_URL --body "https://outlook.office.com/webhook/..."
+```
+
+**Or via GitHub UI:**
+1. Go to your repository → **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret**
+3. Add `SLACK_WEBHOOK_URL` and/or `TEAMS_WEBHOOK_URL`
+
+### Step 3: Add Notification Steps to Workflow
+
+Add these steps to your `.github/workflows/deploy-pr-preview.yml` file, **after** the "Deploy Preview" step:
+
+#### Slack Notification
+
+```yaml
+      # Add this after the "Deploy Preview" step
+      - name: Notify Slack
+        if: success()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚀 Storybook Preview Ready",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 Storybook Preview Deployed"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*PR:*\n<${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Author:*\n${{ github.event.pull_request.user.login }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n`${{ github.head_ref }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n`${{ github.sha }}`"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Title:* ${{ github.event.pull_request.title }}"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "📖 View Storybook"
+                      },
+                      "url": "${{ steps.deploy.outputs.deployment_url }}",
+                      "style": "primary"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View PR"
+                      },
+                      "url": "${{ github.event.pull_request.html_url }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+#### Microsoft Teams Notification
+
+```yaml
+      # Add this after the "Deploy Preview" step
+      - name: Notify Teams
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "themeColor": "0076D7",
+            "summary": "Storybook Preview Deployed",
+            "sections": [{
+              "activityTitle": "🚀 Storybook Preview Deployed",
+              "activitySubtitle": "PR #${{ github.event.pull_request.number }} by ${{ github.event.pull_request.user.login }}",
+              "facts": [{
+                "name": "Branch",
+                "value": "${{ github.head_ref }}"
+              }, {
+                "name": "Commit",
+                "value": "${{ github.sha }}"
+              }, {
+                "name": "Title",
+                "value": "${{ github.event.pull_request.title }}"
+              }],
+              "markdown": true
+            }],
+            "potentialAction": [{
+              "@type": "OpenUri",
+              "name": "View Storybook",
+              "targets": [{
+                "os": "default",
+                "uri": "${{ steps.deploy.outputs.deployment_url }}"
+              }]
+            }, {
+              "@type": "OpenUri",
+              "name": "View PR",
+              "targets": [{
+                "os": "default",
+                "uri": "${{ github.event.pull_request.html_url }}"
+              }]
+            }]
+          }' "${{ secrets.TEAMS_WEBHOOK_URL }}"
+```
+
+### Optional: Toggle Notifications with Variables
+
+Use GitHub Variables to enable/disable notifications without editing the workflow:
+
+```bash
+# Enable notifications
+gh variable set ENABLE_SLACK_NOTIFICATIONS --body "true"
+gh variable set ENABLE_TEAMS_NOTIFICATIONS --body "true"
+```
+
+Then update the `if` condition in the notification steps:
+
+```yaml
+      - name: Notify Slack
+        if: success() && vars.ENABLE_SLACK_NOTIFICATIONS == 'true'
+        # ... rest of step
+```
+
+### Notification Variables Reference
+
+| Name | Type | Description |
+|------|------|-------------|
+| `SLACK_WEBHOOK_URL` | Secret | Your Slack incoming webhook URL |
+| `TEAMS_WEBHOOK_URL` | Secret | Your Microsoft Teams incoming webhook URL |
+| `ENABLE_SLACK_NOTIFICATIONS` | Variable (optional) | Set to `true` to enable Slack notifications |
+| `ENABLE_TEAMS_NOTIFICATIONS` | Variable (optional) | Set to `true` to enable Teams notifications |
+
+### What the Notifications Look Like
+
+**Slack:**
+```
+┌───────────────────────────────────────────────┐
+│ 🚀 Storybook Preview Deployed                 │
+├───────────────────────────────────────────────┤
+│ PR:     #42           Author: @developer      │
+│ Branch: feature/new   Commit: abc1234         │
+├───────────────────────────────────────────────┤
+│ Title: Add new button component               │
+│                                               │
+│ [📖 View Storybook]  [View PR]                │
+└───────────────────────────────────────────────┘
+```
+
+**Teams:**
+```
+┌───────────────────────────────────────────────┐
+│ 🚀 Storybook Preview Deployed                 │
+│ PR #42 by developer                           │
+├───────────────────────────────────────────────┤
+│ Branch: feature/new-button                    │
+│ Commit: abc1234                               │
+│ Title:  Add new button component              │
+├───────────────────────────────────────────────┤
+│ [View Storybook]  [View PR]                   │
+└───────────────────────────────────────────────┘
+```
+
+### Troubleshooting Notifications
+
+**Problem: Slack notification fails with "channel_not_found"**
+- Solution: Regenerate the webhook URL and ensure the Slack app is still installed in your workspace
+
+**Problem: Teams notification shows as plain text**
+- Solution: Ensure the webhook is an "Incoming Webhook" connector, not a Power Automate flow
+
+**Problem: Notification doesn't include buttons**
+- Solution: Some webhook configurations may not support interactive elements. The links will still appear as text.
+
+---
+
 ## 🔧 Troubleshooting the Init Command
 
 ### Command fails with "Not a git repository"

@@ -8,6 +8,7 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "bin": {
+    "scry": "bin/cli.js",
     "storybook-deploy": "bin/cli.js",
     "storybook-deploy-setup": "scripts/postinstall.js"
   },
@@ -30,7 +31,10 @@
     "chalk": "^4.1.2",
     "form-data": "^4.0.0",
     "storycap": "^4.2.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.0.0",
+    "commander": "^11.1.0",
+    "inquirer": "^8.2.6",
+    "open": "^8.4.2"
   },
   "devDependencies": {
     "dotenv": "^17.2.2"
