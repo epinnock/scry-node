@@ -1,5 +1,5 @@
 {
-  "name": "@jules/storybook-deployer",
+  "name": "@scry/storybook-deployer",
   "version": "1.0.0",
   "description": "A CLI to automate the deployment of Storybook static builds.",
   "main": "index.js",
@@ -22,7 +22,7 @@
     "deploy",
     "cli"
   ],
-  "author": "Jules",
+  "author": "Scry",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {

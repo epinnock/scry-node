@@ -3,10 +3,9 @@
 name: Deploy Storybook
 
 on:
-  # Run this workflow whenever a push is made to the main branch
-  push:
-    branches:
-      - main
+  # This is an example workflow - it can only be triggered manually
+  # Change to 'push:' with branch configuration if you want automatic deployments
+  workflow_dispatch:
 
 jobs:
   build-and-deploy-storybook:
