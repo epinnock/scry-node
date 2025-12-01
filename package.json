@@ -8,6 +8,7 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "bin": {
+    "storybook-deployer": "bin/cli.js",
     "scry": "bin/cli.js",
     "storybook-deploy": "bin/cli.js",
     "storybook-deploy-setup": "scripts/postinstall.js"

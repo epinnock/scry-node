@@ -73,10 +73,16 @@ This deploys your Storybook immediately without setting up GitHub Actions.
 **You don't need to install anything!** Just use `npx` to run the init command:
 
 ```bash
+# From npm (recommended)
 npx @scry/storybook-deployer init --projectId xxx --apiKey yyy
+
+# From GitHub (latest from main branch)
+npx github:epinnock/scry-node init --projectId xxx --apiKey yyy
 ```
 
-However, if you prefer to install it as a development dependency:
+### Installing as a Dependency
+
+If you prefer to install it as a development dependency:
 
 ```bash
 # From npm (when published)
@@ -88,6 +94,19 @@ npm install github:epinnock/scry-node --save-dev
 pnpm add github:epinnock/scry-node -D
 # or
 yarn add github:epinnock/scry-node --dev
+```
+
+After installation, you can run commands using:
+
+```bash
+# Using the storybook-deployer binary
+npx storybook-deployer init --projectId xxx --apiKey yyy
+
+# Using the scry alias
+npx scry init --projectId xxx --apiKey yyy
+
+# Using the storybook-deploy alias (for deploy commands)
+npx storybook-deploy --dir ./storybook-static
 ```
 
 **Note:** The `init` command handles all configuration automatically, so manual installation is only needed if you want the package in your `node_modules` for local development.
