@@ -200,7 +200,8 @@ async function main() {
                         describe: 'Project name/identifier',
                         type: 'string',
                     })
-                    .option('version', {
+                    .option('deploy-version', {
+                        alias: 'v',
                         describe: 'Version identifier for the deployment',
                         type: 'string',
                     })
@@ -250,7 +251,8 @@ async function main() {
                         type: 'string',
                         demandOption: true,
                     })
-                    .option('version', {
+                    .option('deploy-version', {
+                        alias: 'v',
                         describe: 'Version identifier',
                         type: 'string',
                         demandOption: true,
@@ -338,8 +340,7 @@ async function main() {
             .env('STORYBOOK_DEPLOYER')
             .help()
             .alias('help', 'h')
-            .version()
-            .alias('version', 'v')
+            .version(false)  // Disable built-in version since we use -v for deploy-version
             .parse();
 
     } catch (error) {
