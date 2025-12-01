@@ -398,11 +398,15 @@ If you're installing from GitHub, the workflow file is already included.
 2. Go to **Settings** → **Secrets and variables** → **Actions**
 3. Click on the **Variables** tab
 4. Click **New repository variable**
-5. Add the following variable:
+5. Add the following variables:
 
 | Variable Name | Value | Example |
 |--------------|-------|---------|
 | `SCRY_PROJECT_ID` | Your project identifier | `my-storybook` or `company-design-system` |
+| `SCRY_API_URL` | Backend API endpoint for uploads | `https://api.scrymore.com` |
+| `SCRY_VIEW_URL` | Base URL where users view deployed Storybooks | `https://view.scrymore.com` |
+
+**Note:** The `SCRY_VIEW_URL` is where users will access your deployed Storybook (e.g., `https://view.scrymore.com/{project}/pr-{number}`). This is separate from `SCRY_API_URL`, which is the backend API endpoint used for uploads.
 
 **Step 3: Configure GitHub Actions Secrets (Optional)**
 
@@ -436,18 +440,20 @@ If your build command is different, update line 29 in `.github/workflows/deploy-
   run: npm run build-storybook  # Change this if your command differs
 ```
 
-**Step 5: Verify Deployment URL Pattern**
+**Step 5: Configure View URL (Where Users Access Storybooks)**
 
-The workflow constructs deployment URLs using this pattern:
+The workflow constructs deployment URLs using the `SCRY_VIEW_URL` variable:
 ```
-https://storybook-deployment-service.epinnock.workers.dev/{PROJECT_ID}/pr-{PR_NUMBER}
+{SCRY_VIEW_URL}/{PROJECT_ID}/pr-{PR_NUMBER}
 ```
 
-If your backend uses a different URL pattern, update line 41 in the workflow:
+**Default:** If `SCRY_VIEW_URL` is not set, it defaults to `https://view.scrymore.com`
 
-```yaml
-DEPLOY_URL="https://your-backend.com/${PROJECT_ID}/pr-${{ github.event.pull_request.number }}"
-```
+**Example URLs:**
+- With default: `https://view.scrymore.com/my-project/pr-123`
+- With custom domain: `https://storybooks.mycompany.com/my-project/pr-123`
+
+To use a custom domain, add `SCRY_VIEW_URL` as a repository variable (see Step 2).
 
 **Step 6: Test with a Pull Request**
 
@@ -476,8 +482,13 @@ The PR preview workflow uses these environment variables (configured via GitHub 
 | Environment Variable | Source | Required | Description |
 |---------------------|--------|----------|-------------|
 | `SCRY_PROJECT_ID` | GitHub Variable | **Yes** | Project identifier for deployments |
-| `SCRY_API_URL` | Hardcoded in workflow | **Yes** | Backend API endpoint URL |
+| `SCRY_API_URL` | GitHub Variable | **Yes** | Backend API endpoint for uploads |
+| `SCRY_VIEW_URL` | GitHub Variable | No | Base URL where users view Storybooks (default: `https://view.scrymore.com`) |
 | `SCRY_API_KEY` | GitHub Secret | No | API authentication key (if required) |
+
+**Important:** `SCRY_API_URL` (where files are uploaded) and `SCRY_VIEW_URL` (where users view the deployed Storybook) are two different URLs:
+- **API URL**: Backend service endpoint (e.g., `https://api.scrymore.com`)
+- **View URL**: Public-facing CDN or viewer URL (e.g., `https://view.scrymore.com`)
 
 The CLI also supports these environment variables for backward compatibility:
 - `STORYBOOK_DEPLOYER_*` (legacy prefix)
@@ -504,7 +515,7 @@ The CLI also supports these environment variables for backward compatibility:
 ```markdown
 ## 🚀 Storybook Preview Deployed
 
-**Preview URL:** https://storybook-deployment-service.epinnock.workers.dev/my-project/pr-123
+**Preview URL:** https://view.scrymore.com/my-project/pr-123
 
 📌 **Details:**
 - **Commit:** `abc1234`
