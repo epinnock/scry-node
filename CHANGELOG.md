@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.3
+
+### Patch Changes
+
+- [#4](https://github.com/epinnock/scry-node/pull/4) [`5f124ef`](https://github.com/epinnock/scry-node/commit/5f124ef90d575f9956c2fa32a389bd101a4feb1a) Thanks [@epinnock](https://github.com/epinnock)! - update docs
+
 ## 0.0.2
 
 ### Patch Changes
