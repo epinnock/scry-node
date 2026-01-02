@@ -1,14 +1,17 @@
 {
-  "name": "@scry/storybook-deployer",
-  "version": "1.0.1",
+  "name": "@scrymore/scry-deployer",
+  "version": "0.0.1",
   "description": "A CLI to automate the deployment of Storybook static builds.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish"
   },
   "bin": {
-    "storybook-deployer": "bin/cli.js",
+    "scry-deployer": "bin/cli.js",
     "scry": "bin/cli.js",
     "storybook-deploy": "bin/cli.js",
     "storybook-deploy-setup": "scripts/postinstall.js"
@@ -21,23 +24,38 @@
   "keywords": [
     "storybook",
     "deploy",
-    "cli"
+    "cli",
+    "scry",
+    "scrymore"
   ],
-  "author": "Scry",
+  "author": "Scrymore",
   "license": "ISC",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/epinnock/scry-node.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "archiver": "^7.0.1",
     "axios": "^1.12.2",
     "chalk": "^4.1.2",
-    "form-data": "^4.0.0",
-    "storycap": "^4.2.0",
-    "yargs": "^17.7.2",
     "commander": "^11.1.0",
+    "form-data": "^4.0.0",
     "inquirer": "^8.2.6",
-    "open": "^8.4.2"
+    "open": "^8.4.2",
+    "storycap": "^4.2.0",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
     "dotenv": "^17.2.2"
   }
 }

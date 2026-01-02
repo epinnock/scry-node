@@ -32,7 +32,7 @@ jobs:
         run: pnpm run build-storybook
 
       - name: Deploy to Scry
-        run: npx @scry/storybook-deployer --dir ./storybook-static
+        run: npx @scrymore/scry-deployer --dir ./storybook-static
         env:
           STORYBOOK_DEPLOYER_API_URL: ${{ vars.SCRY_API_URL }}
           STORYBOOK_DEPLOYER_PROJECT: ${{ vars.SCRY_PROJECT_ID }}

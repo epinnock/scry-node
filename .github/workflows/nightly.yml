@@ -1,0 +1,106 @@
+name: Nightly Release
+
+on:
+  schedule:
+    # Run every day at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Snapshot tag (default: nightly)'
+        required: false
+        default: 'nightly'
+
+jobs:
+  nightly:
+    name: Publish Nightly
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check for changes since last release
+        id: changes
+        run: |
+          # Get the latest tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tags found, will publish nightly"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            # Check for changes in source files since last tag
+            CHANGES=$(git diff --name-only $LAST_TAG HEAD -- lib/ bin/ package.json 2>/dev/null || echo "changed")
+            if [ -n "$CHANGES" ]; then
+              echo "Changes detected since $LAST_TAG:"
+              echo "$CHANGES"
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            else
+              echo "No changes since $LAST_TAG"
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Create snapshot version
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          TAG="${{ github.event.inputs.tag || 'nightly' }}"
+          echo "Creating snapshot version with tag: $TAG"
+          npx @changesets/cli version --snapshot $TAG
+
+      - name: Show version
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          echo "Package version:"
+          node -p "require('./package.json').version"
+
+      - name: Publish snapshot
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          TAG="${{ github.event.inputs.tag || 'nightly' }}"
+          echo "Publishing with tag: $TAG"
+          npx @changesets/cli publish --tag $TAG --no-git-tag
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skip - No changes
+        if: steps.changes.outputs.has_changes == 'false'
+        run: echo "No changes since last release, skipping nightly build"
+
+      - name: Summary
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          TAG="${{ github.event.inputs.tag || 'nightly' }}"
+          VERSION=$(node -p "require('./package.json').version")
+          echo "## 🌙 Nightly Release Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** @scrymore/scry-deployer" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** $TAG" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Install with:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "npm install @scrymore/scry-deployer@$TAG" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

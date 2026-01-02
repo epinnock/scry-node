@@ -39,7 +39,7 @@ jobs:
         id: deploy
         run: |
           # Deploy with PR-specific version
-          npx @scry/storybook-deployer \
+          npx @scrymore/scry-deployer \
             --dir ./storybook-static \
             --version pr-${{ github.event.pull_request.number }}
 
