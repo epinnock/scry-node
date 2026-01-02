@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.2
+
+### Patch Changes
+
+- [`734fc67`](https://github.com/epinnock/scry-node/commit/734fc67a69ff70dbf556ba27029a0cf8ce4f882b) Thanks [@epinnock](https://github.com/epinnock)! - Initial release
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -12,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.1] - Initial Release
 
 ### Added
+
 - Initial release of `@scrymore/scry-deployer`
 - CLI for deploying Storybook static builds
 - Support for automated screenshot capture with storycap
