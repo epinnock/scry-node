@@ -5,7 +5,7 @@ Deploy your Storybook to the cloud with one command. ⚡
 ## 🎯 Quick Start (5 seconds)
 
 ### 1. Get your credentials
-Visit the [Scry Dashboard](https://dashboard.scry.com) and:
+Visit the [Scry Dashboard](https://dashboard.scrymore.com) and:
 - 🔐 Login with your account (Firebase)
 - 📦 Create a new project
 - 📋 Copy your **Project ID** and **API Key**
@@ -13,7 +13,7 @@ Visit the [Scry Dashboard](https://dashboard.scry.com) and:
 ### 2. Run the setup command
 
 ```bash
-npx @scry/storybook-deployer init --projectId YOUR_PROJECT_ID --apiKey YOUR_API_KEY
+npx @scrymore/scry-deployer init --projectId YOUR_PROJECT_ID --apiKey YOUR_API_KEY
 ```
 
 **That's it!** 🎉
@@ -61,7 +61,7 @@ This tool is designed for execution within a CI/CD pipeline (such as GitHub Acti
 Want to test a deployment before setting up automation? Run:
 
 ```bash
-npx @scry/storybook-deployer --dir ./storybook-static --project YOUR_PROJECT_ID --api-key YOUR_API_KEY
+npx @scrymore/scry-deployer --dir ./storybook-static --project YOUR_PROJECT_ID --api-key YOUR_API_KEY
 ```
 
 This deploys your Storybook immediately without setting up GitHub Actions.
@@ -74,7 +74,7 @@ This deploys your Storybook immediately without setting up GitHub Actions.
 
 ```bash
 # From npm (recommended)
-npx @scry/storybook-deployer init --projectId xxx --apiKey yyy
+npx @scrymore/scry-deployer init --projectId xxx --apiKey yyy
 
 # From GitHub (latest from main branch)
 npx github:epinnock/scry-node init --projectId xxx --apiKey yyy
@@ -86,7 +86,7 @@ If you prefer to install it as a development dependency:
 
 ```bash
 # From npm (when published)
-npm install @scry/storybook-deployer --save-dev
+npm install @scrymore/scry-deployer --save-dev
 
 # From GitHub
 npm install github:epinnock/scry-node --save-dev
@@ -839,7 +839,7 @@ gh auth login
 
 Or skip GitHub CLI setup and set variables manually:
 ```bash
-npx @scry/storybook-deployer init --projectId xxx --apiKey yyy --skip-gh-setup
+npx @scrymore/scry-deployer init --projectId xxx --apiKey yyy --skip-gh-setup
 ```
 
 Then manually add variables in GitHub Settings → Secrets and variables → Actions.
@@ -878,6 +878,64 @@ git add .github/
 git commit -m "Customize Storybook workflows"
 git push
 ```
+
+---
+
+## 👩‍💻 Contributing & Development
+
+We use [Changesets](https://github.com/changesets/changesets) for version management and releases.
+
+### Development Workflow
+
+```bash
+# 1. Create a feature branch
+git checkout main && git pull
+git checkout -b feature/my-new-feature
+
+# 2. Make your changes
+# ... edit files ...
+
+# 3. Create a changeset (if your changes should be released)
+pnpm changeset
+# Select @scrymore/scry-deployer
+# Choose: patch (bug fix), minor (feature), major (breaking)
+# Write a description of your changes
+
+# 4. Commit everything
+git add .
+git commit -m "feat: add new feature"
+
+# 5. Push and create a PR
+git push -u origin HEAD
+```
+
+### When to Create a Changeset
+
+| Change Type | Changeset? | Version Bump |
+|-------------|------------|--------------|
+| Bug fix | ✅ Yes | `patch` (0.0.1 → 0.0.2) |
+| New feature | ✅ Yes | `minor` (0.0.2 → 0.1.0) |
+| Breaking change | ✅ Yes | `major` (0.1.0 → 1.0.0) |
+| Documentation only | ❌ No | - |
+| CI/workflow changes | ❌ No | - |
+
+### Release Process
+
+1. **Merge PR to main** → Release workflow runs
+2. **Changesets bot creates "Version Packages" PR** → Updates version + CHANGELOG
+3. **Merge Version PR** → Publishes to npm automatically
+
+### Installing Development Versions
+
+```bash
+# Stable release (recommended)
+npm install @scrymore/scry-deployer
+
+# Nightly release (latest from main, published daily)
+npm install @scrymore/scry-deployer@nightly
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 
 ---
 
