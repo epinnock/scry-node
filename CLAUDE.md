@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Node.js CLI tool called `@scry/storybook-deployer` that automates the deployment of Storybook static builds to cloud storage. The tool is designed for CI/CD pipeline integration, particularly with GitHub Actions.
+This is a Node.js CLI tool called `@scrymore/scry-deployer` that automates the deployment of Storybook static builds to cloud storage. The tool is designed for CI/CD pipeline integration, particularly with GitHub Actions.
 
 ## Commands
 
