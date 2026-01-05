@@ -44,9 +44,9 @@ jobs:
             --version pr-${{ github.event.pull_request.number }}
 
           # Construct deployment URL using VIEW_URL (where users access the deployed Storybook)
-          # Defaults to http://view.scrymore.com if SCRY_VIEW_URL is not set
+          # Defaults to https://view.scrymore.com if SCRY_VIEW_URL is not set
           PROJECT_ID="${{ vars.SCRY_PROJECT_ID }}"
-          VIEW_URL="${{ vars.SCRY_VIEW_URL || 'http://view.scrymore.com' }}"
+          VIEW_URL="${{ vars.SCRY_VIEW_URL || 'https://view.scrymore.com' }}"
           DEPLOY_URL="${VIEW_URL}/${PROJECT_ID}/pr-${{ github.event.pull_request.number }}/"
           echo "deployment_url=$DEPLOY_URL" >> $GITHUB_OUTPUT
         env:
