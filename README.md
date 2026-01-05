@@ -406,7 +406,7 @@ If you're installing from GitHub, the workflow file is already included.
 | `SCRY_API_URL` | Backend API endpoint for uploads | `https://api.scrymore.com` |
 | `SCRY_VIEW_URL` | Base URL where users view deployed Storybooks | `https://view.scrymore.com` |
 
-**Note:** The `SCRY_VIEW_URL` is where users will access your deployed Storybook (e.g., `https://view.scrymore.com/{project}/pr-{number}`). This is separate from `SCRY_API_URL`, which is the backend API endpoint used for uploads.
+**Note:** The `SCRY_VIEW_URL` is where users will access your deployed Storybook (e.g., `https://view.scrymore.com/{project}/pr-{number}/`). This is separate from `SCRY_API_URL`, which is the backend API endpoint used for uploads.
 
 **Step 3: Configure GitHub Actions Secrets (Optional)**
 
@@ -444,14 +444,14 @@ If your build command is different, update line 29 in `.github/workflows/deploy-
 
 The workflow constructs deployment URLs using the `SCRY_VIEW_URL` variable:
 ```
-{SCRY_VIEW_URL}/{PROJECT_ID}/pr-{PR_NUMBER}
+{SCRY_VIEW_URL}/{PROJECT_ID}/pr-{PR_NUMBER}/
 ```
 
 **Default:** If `SCRY_VIEW_URL` is not set, it defaults to `https://view.scrymore.com`
 
 **Example URLs:**
-- With default: `https://view.scrymore.com/my-project/pr-123`
-- With custom domain: `https://storybooks.mycompany.com/my-project/pr-123`
+- With default: `https://view.scrymore.com/my-project/pr-123/`
+- With custom domain: `https://storybooks.mycompany.com/my-project/pr-123/`
 
 To use a custom domain, add `SCRY_VIEW_URL` as a repository variable (see Step 2).
 
@@ -515,7 +515,7 @@ The CLI also supports these environment variables for backward compatibility:
 ```markdown
 ## 🚀 Storybook Preview Deployed
 
-**Preview URL:** https://view.scrymore.com/my-project/pr-123
+**Preview URL:** https://view.scrymore.com/my-project/pr-123/
 
 📌 **Details:**
 - **Commit:** `abc1234`
