@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for coverage new-code analysis
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -32,8 +34,14 @@ jobs:
         run: pnpm run build-storybook
 
       - name: Deploy to Scry
-        run: npx @scrymore/scry-deployer --dir ./storybook-static
+        run: |
+          npx @scrymore/scry-deployer \
+            --dir ./storybook-static \
+            ${{ vars.SCRY_COVERAGE_ENABLED == 'false' && '--no-coverage' || '' }} \
+            ${{ vars.SCRY_COVERAGE_FAIL_ON_THRESHOLD == 'true' && '--coverage-fail-on-threshold' || '' }} \
+            --coverage-base ${{ vars.SCRY_COVERAGE_BASE || 'main' }}
         env:
           STORYBOOK_DEPLOYER_API_URL: ${{ vars.SCRY_API_URL }}
           STORYBOOK_DEPLOYER_PROJECT: ${{ vars.SCRY_PROJECT_ID }}
           STORYBOOK_DEPLOYER_API_KEY: ${{ secrets.SCRY_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -9,8 +9,17 @@ These are GitHub Actions workflow templates for projects that use `@scrymore/scr
 ### deploy-storybook.yml
 Deploys Storybook to Scry on push to main/master branch.
 
+Includes:
+- `fetch-depth: 0` (required for coverage new-code analysis)
+- Coverage flags (`--no-coverage`, `--coverage-fail-on-threshold`, `--coverage-base`)
+
 ### deploy-pr-preview.yml
 Creates preview deployments for pull requests with automatic PR comments.
+
+Includes:
+- `fetch-depth: 0` (required for coverage new-code analysis)
+- Draft PR optimization (skips coverage for draft PRs)
+- Coverage summary PR comments posted by the CLI (requires `GITHUB_TOKEN`)
 
 ### deploy-example.yml
 A basic example workflow that can be manually triggered.
