@@ -50,6 +50,7 @@ This tool is designed for execution within a CI/CD pipeline (such as GitHub Acti
 - 🔍 Auto-detection of `.stories.*` files
 - 📊 Story metadata extraction and analysis
 - 📸 Automated screenshot capture with storycap
+- 🧪 Storybook coverage analysis + PR summary comments (see `docs/COVERAGE.md`)
 - 📦 Organized master ZIP packaging (staticsite, images, metadata)
 - ⚙️ Flexible configuration (CLI, env vars, config file)
 - 🔒 Secure presigned URL uploads

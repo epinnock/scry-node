@@ -7,12 +7,14 @@ const path = require('path');
 const os = require('os');
 const { zipDirectory } = require('../lib/archive.js');
 const { createMasterZip } = require('../lib/archiveUtils.js');
-const { getApiClient, uploadFileDirectly } = require('../lib/apiClient.js');
+const { getApiClient, uploadBuild } = require('../lib/apiClient.js');
 const { createLogger } = require('../lib/logger.js');
 const { AppError, ApiError } = require('../lib/errors.js');
 const { loadConfig } = require('../lib/config.js');
 const { captureScreenshots } = require('../lib/screencap.js');
 const { analyzeStorybook } = require('../lib/analysis.js');
+const { runCoverageAnalysis, loadCoverageReport, extractCoverageSummary } = require('../lib/coverage.js');
+const { postPRComment } = require('../lib/pr-comment.js');
 const { runInit } = require('../lib/init.js');
 
 async function runAnalysis(argv) {
@@ -83,6 +85,8 @@ async function runDeployment(argv) {
     const outPath = path.join(os.tmpdir(), `storybook-deployment-${Date.now()}.zip`);
 
     try {
+        const { coverageReport, coverageSummary } = await resolveCoverage(argv, logger);
+
         if (argv.withAnalysis) {
             // Full deployment with analysis
             logger.info('Running deployment with analysis...');
@@ -117,15 +121,21 @@ async function runDeployment(argv) {
             logger.success(`✅ Master archive created: ${outPath}`);
             logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
 
-            // 4. Upload archive
+            // 4. Upload archive (+ optional coverage)
             logger.info('4/5: Uploading to deployment service...');
             const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-            const uploadResult = await uploadFileDirectly(apiClient, {
-                project: argv.project,
-                version: argv.version,
-            }, outPath);
+            const uploadResult = await uploadBuild(
+                apiClient,
+                {
+                    project: argv.project,
+                    version: argv.version,
+                },
+                { zipPath: outPath, coverageReport }
+            );
             logger.success('✅ Archive uploaded.');
             logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
+
+            await postPRComment(buildDeployResult(argv, coverageSummary), coverageSummary);
 
             logger.success('\n🎉 Deployment with analysis successful! 🎉');
 
@@ -137,15 +147,21 @@ async function runDeployment(argv) {
             logger.success(`✅ Archive created: ${outPath}`);
             logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
 
-            // 2. Authenticate and upload directly
+            // 2. Authenticate and upload directly (+ optional coverage)
             logger.info('2/3: Uploading to deployment service...');
             const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-            const uploadResult = await uploadFileDirectly(apiClient, {
-                project: argv.project,
-                version: argv.version,
-            }, outPath);
+            const uploadResult = await uploadBuild(
+                apiClient,
+                {
+                    project: argv.project,
+                    version: argv.version,
+                },
+                { zipPath: outPath, coverageReport }
+            );
             logger.success('✅ Archive uploaded.');
             logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
+
+            await postPRComment(buildDeployResult(argv, coverageSummary), coverageSummary);
 
             logger.success('\n🎉 Deployment successful! 🎉');
         }
@@ -201,9 +217,34 @@ async function main() {
                         type: 'string',
                     })
                     .option('deploy-version', {
-                        alias: 'v',
+                        alias: ['v', 'version'],
                         describe: 'Version identifier for the deployment',
                         type: 'string',
+                    })
+                    // Coverage options (enabled by default)
+                    .option('coverage', {
+                        describe: 'Run coverage analysis and upload report',
+                        type: 'boolean',
+                        default: true,
+                    })
+                    .option('coverage-report', {
+                        describe: 'Path to coverage report JSON file (skip analysis and upload this report)',
+                        type: 'string',
+                    })
+                    .option('coverage-fail-on-threshold', {
+                        describe: 'Fail if coverage thresholds are not met',
+                        type: 'boolean',
+                        default: false,
+                    })
+                    .option('coverage-base', {
+                        describe: 'Base branch for new code analysis',
+                        type: 'string',
+                        default: 'main',
+                    })
+                    .option('coverage-execute', {
+                        describe: 'Execute stories during coverage analysis',
+                        type: 'boolean',
+                        default: false,
                     })
                     .option('with-analysis', {
                         describe: 'Include Storybook analysis (screenshots, metadata)',
@@ -348,4 +389,83 @@ async function main() {
     }
 }
 
-main();
+/**
+ * Resolve coverage settings into a report and a summary.
+ *
+ * @param {any} argv
+ * @param {{info:Function,debug:Function,success:Function,error:Function}} logger
+ */
+async function resolveCoverage(argv, logger) {
+    const enabled = argv.coverage !== false;
+    if (!enabled) {
+        logger.info('Coverage: disabled (--no-coverage)');
+        return { coverageReport: null, coverageSummary: null };
+    }
+
+    try {
+        let report = null;
+
+        if (argv.coverageReport) {
+            logger.info(`Coverage: using existing report at ${argv.coverageReport}`);
+            report = loadCoverageReport(argv.coverageReport);
+        } else {
+            report = await runCoverageAnalysis({
+                storybookDir: argv.dir,
+                baseBranch: argv.coverageBase || 'main',
+                failOnThreshold: Boolean(argv.coverageFailOnThreshold),
+                execute: Boolean(argv.coverageExecute),
+            });
+        }
+
+        const summary = extractCoverageSummary(report);
+        if (summary) {
+            logger.success('✅ Coverage report ready');
+            logger.debug(`Coverage summary: ${JSON.stringify(summary.summary)}`);
+        } else {
+            logger.info('Coverage: no report generated (tool failed or report shape unexpected)');
+        }
+
+        return { coverageReport: report, coverageSummary: summary };
+    } catch (err) {
+        logger.error(`Coverage: failed (${err.message})`);
+        throw err;
+    }
+}
+
+/**
+ * Construct public URLs for view and coverage assets.
+ *
+ * @param {any} argv
+ * @param {any|null} coverageSummary
+ */
+function buildDeployResult(argv, coverageSummary) {
+    const project = argv.project || 'main';
+    const version = argv.version || 'latest';
+    const viewBaseUrl = process.env.SCRY_VIEW_URL || 'https://view.scrymore.com';
+
+    const viewUrl = `${viewBaseUrl.replace(/\/$/, '')}/${project}/${version}/`;
+
+    const coverageUrl = coverageSummary
+        ? `${viewBaseUrl.replace(/\/$/, '')}/${project}/${version}/coverage-report.json`
+        : null;
+
+    return {
+        project,
+        version,
+        viewUrl,
+        coverageUrl,
+        coveragePageUrl: coverageUrl,
+    };
+}
+
+if (require.main === module) {
+    main();
+}
+
+module.exports = {
+    main,
+    runDeployment,
+    runAnalysis,
+    resolveCoverage,
+    buildDeployResult,
+};
