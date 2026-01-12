@@ -101,3 +101,16 @@ Consider:
 
 - The full coverage report is generated to a temporary JSON file and deleted after parsing.
 - The PR comment uses a stable marker (`<!-- scry-deployer -->`) and is updated instead of creating duplicates.
+
+### Coverage upload flow
+
+Coverage is uploaded via the dedicated coverage attach endpoint (`POST /upload/:project/:version/coverage`) rather than using presigned URLs. This ensures:
+
+1. **Single build per version**: Only the Storybook ZIP upload creates a Firestore build record. Coverage is attached to that existing build.
+2. **Atomic operation**: The coverage JSON is uploaded to R2 storage and the normalized coverage data is attached to the build in a single API call.
+3. **Validation**: The server can validate and normalize the coverage data before storing it.
+
+The flow is:
+1. CLI requests presigned URL for `storybook.zip` → Build created in Firestore
+2. CLI uploads ZIP to R2 via presigned URL
+3. CLI posts coverage JSON to `/upload/:project/:version/coverage` → Coverage attached to existing build
