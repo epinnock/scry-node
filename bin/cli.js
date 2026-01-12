@@ -241,6 +241,11 @@ async function main() {
                         type: 'string',
                         default: 'main',
                     })
+                    .option('coverage-execute', {
+                        describe: 'Execute stories during coverage analysis',
+                        type: 'boolean',
+                        default: false,
+                    })
                     .option('with-analysis', {
                         describe: 'Include Storybook analysis (screenshots, metadata)',
                         type: 'boolean',
@@ -408,6 +413,7 @@ async function resolveCoverage(argv, logger) {
                 storybookDir: argv.dir,
                 baseBranch: argv.coverageBase || 'main',
                 failOnThreshold: Boolean(argv.coverageFailOnThreshold),
+                execute: Boolean(argv.coverageExecute),
             });
         }
 

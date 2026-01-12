@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5
+
+### Patch Changes
+
+- 6505a2c: Update @scrymore/scry-sbcov dependency to ^0.2.1 minimum and remove local linking
+
 ## 0.0.4
 
 ### Patch Changes
