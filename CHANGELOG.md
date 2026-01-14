@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.6
+
+### Patch Changes
+
+- Add Sentry integration for error tracking and update @scrymore/scry-sbcov dependency
+
 ## 0.0.5
 
 ### Patch Changes

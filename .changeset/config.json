@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@latest/schema.json",
-  "changelog": ["@changesets/changelog-github", { "repo": "epinnock/scry-node" }],
+  "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
   "linked": [],
