@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const Sentry = require('@sentry/node');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const fs = require('fs');
@@ -175,9 +176,25 @@ async function runDeployment(argv) {
     }
 }
 
-function handleError(error, argv) {
+async function handleError(error, argv) {
     const logger = createLogger(argv || {});
     logger.error(`\n❌ Error: ${error.message}`);
+
+    // Capture error in Sentry with additional context
+    Sentry.withScope((scope) => {
+        if (argv) {
+            scope.setTags({
+                project: argv.project,
+                version: argv.version,
+                command: argv._ ? argv._[0] : 'unknown',
+            });
+            scope.setExtra('argv', argv);
+        }
+        Sentry.captureException(error);
+    });
+    
+    // Ensure the event is sent before the process exits
+    await Sentry.close(2000);
 
     if (error instanceof ApiError) {
         if (error.statusCode === 401) {
@@ -195,6 +212,13 @@ function handleError(error, argv) {
 }
 
 async function main() {
+    // Initialize Sentry
+    Sentry.init({
+        dsn: "https://c66ce229a1db2289f145eebd02436d9c@o4507889391828992.ingest.us.sentry.io/4510699330732032", // Fallback to hardcoded DSN for user reporting
+        tracesSampleRate: 1.0,
+        environment: process.env.NODE_ENV || 'production',
+    });
+
     let config;
     try {
         const args = await yargs(hideBin(process.argv))
@@ -378,6 +402,9 @@ async function main() {
 
                 await runInit(initConfig);
             })
+            .command('debug-sentry', 'Test Sentry integration by throwing an error', () => {}, () => {
+                throw new Error('Sentry debug error from scry-node CLI');
+            })
             .env('STORYBOOK_DEPLOYER')
             .help()
             .alias('help', 'h')
@@ -385,7 +412,7 @@ async function main() {
             .parse();
 
     } catch (error) {
-        handleError(error, config);
+        await handleError(error, config);
     }
 }
 
