@@ -136,9 +136,10 @@ async function runDeployment(argv) {
             logger.success('✅ Archive uploaded.');
             logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
 
-            await postPRComment(buildDeployResult(argv, coverageSummary), coverageSummary);
+            await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
 
             logger.success('\n🎉 Deployment with analysis successful! 🎉');
+            logUploadLinks(argv, coverageSummary, uploadResult, logger);
 
         } else {
             // Simple deployment without analysis
@@ -162,9 +163,10 @@ async function runDeployment(argv) {
             logger.success('✅ Archive uploaded.');
             logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
 
-            await postPRComment(buildDeployResult(argv, coverageSummary), coverageSummary);
+            await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
 
             logger.success('\n🎉 Deployment successful! 🎉');
+            logUploadLinks(argv, coverageSummary, uploadResult, logger);
         }
 
     } finally {
@@ -465,7 +467,7 @@ async function resolveCoverage(argv, logger) {
  * @param {any} argv
  * @param {any|null} coverageSummary
  */
-function buildDeployResult(argv, coverageSummary) {
+function buildDeployResult(argv, coverageSummary, uploadResult) {
     const project = argv.project || 'main';
     const version = argv.version || 'latest';
     const viewBaseUrl = process.env.SCRY_VIEW_URL || 'https://view.scrymore.com';
@@ -482,7 +484,22 @@ function buildDeployResult(argv, coverageSummary) {
         viewUrl,
         coverageUrl,
         coveragePageUrl: coverageUrl,
+        visibility: uploadResult?.zipUpload?.visibility,
     };
+}
+
+function logUploadLinks(argv, coverageSummary, uploadResult, logger) {
+    const deployResult = buildDeployResult(argv, coverageSummary, uploadResult);
+
+    logger.success('\n✅ Upload successful!\n');
+    logger.info(`📖 Storybook: ${deployResult.viewUrl}`);
+    if (deployResult.coverageUrl) {
+        logger.info(`📊 Coverage:  ${deployResult.coverageUrl}`);
+    }
+
+    if (deployResult.visibility === 'private') {
+        logger.info('\n🔒 This project is private. Viewers must be logged in to access.');
+    }
 }
 
 if (require.main === module) {
@@ -495,4 +512,5 @@ module.exports = {
     runAnalysis,
     resolveCoverage,
     buildDeployResult,
+    logUploadLinks,
 };
