@@ -17,6 +17,7 @@ const { analyzeStorybook } = require('../lib/analysis.js');
 const { runCoverageAnalysis, loadCoverageReport, extractCoverageSummary } = require('../lib/coverage.js');
 const { postPRComment } = require('../lib/pr-comment.js');
 const { runInit } = require('../lib/init.js');
+const { runUpdateWorkflows } = require('../lib/update-workflows.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -354,7 +355,63 @@ async function main() {
 
                 await runAnalysis(config);
             })
-            .command('init', 'Setup GitHub Actions workflows for automatic deployment', (yargs) => {
+            
+            .command('coverage', 'Run only Storybook coverage analysis and write the report to disk', (yargs) => {
+                return yargs
+                    .option('dir', {
+                        describe: 'Path to the built Storybook directory (e.g., storybook-static)',
+                        type: 'string',
+                        demandOption: true,
+                    })
+                    .option('coverage-base', {
+                        describe: 'Base ref/branch for new code analysis (supports SHAs, origin/main, HEAD~1)',
+                        type: 'string',
+                        default: 'main',
+                        alias: 'coverageBase'
+                    })
+                    .option('coverage-fail-on-threshold', {
+                        describe: 'Fail (exit 1) if coverage thresholds are not met',
+                        type: 'boolean',
+                        default: false,
+                        alias: 'coverageFailOnThreshold'
+                    })
+                    .option('coverage-execute', {
+                        describe: 'Execute stories during coverage analysis (requires playwright in the project)',
+                        type: 'boolean',
+                        default: false,
+                        alias: 'coverageExecute'
+                    })
+                    .option('output', {
+                        describe: 'Where to write the JSON coverage report',
+                        type: 'string',
+                        default: './scry-sbcov-report.json'
+                    })
+                    .option('verbose', {
+                        describe: 'Enable verbose logging',
+                        type: 'boolean',
+                        default: false,
+                    });
+            }, async (argv) => {
+                const logger = createLogger(argv);
+
+                const report = await runCoverageAnalysis({
+                    storybookDir: argv.dir,
+                    baseBranch: argv.coverageBase || 'main',
+                    failOnThreshold: Boolean(argv.coverageFailOnThreshold),
+                    execute: Boolean(argv.coverageExecute),
+                    outputPath: argv.output,
+                    keepReport: true,
+                });
+
+                if (!report) {
+                    logger.error('Coverage: no report generated (tool failed or returned null)');
+                    process.exit(1);
+                }
+
+                logger.success(`✅ Coverage report written to ${argv.output}`);
+            })
+
+.command('init', 'Setup GitHub Actions workflows for automatic deployment', (yargs) => {
                 return yargs
                     .option('project-id', {
                         describe: 'Project ID from Scry dashboard',

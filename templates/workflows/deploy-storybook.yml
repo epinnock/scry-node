@@ -39,7 +39,8 @@ jobs:
             --dir ./storybook-static \
             ${{ vars.SCRY_COVERAGE_ENABLED == 'false' && '--no-coverage' || '' }} \
             ${{ vars.SCRY_COVERAGE_FAIL_ON_THRESHOLD == 'true' && '--coverage-fail-on-threshold' || '' }} \
-            --coverage-base ${{ vars.SCRY_COVERAGE_BASE || 'main' }}
+            ${{ vars.SCRY_COVERAGE_EXECUTE == 'true' && '--coverage-execute' || '' }} \
+            --coverage-base ${{ vars.SCRY_COVERAGE_BASE || github.event.before }}
         env:
           STORYBOOK_DEPLOYER_API_URL: ${{ vars.SCRY_API_URL }}
           STORYBOOK_DEPLOYER_PROJECT: ${{ vars.SCRY_PROJECT_ID }}
