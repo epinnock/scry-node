@@ -26,7 +26,7 @@ When coverage is enabled:
 | `--coverage` / `--no-coverage` | enabled | Enable/disable running coverage during deployment |
 | `--coverage-report <path>` | - | Use an existing report file (skips running the analyzer) |
 | `--coverage-fail-on-threshold` | false | Fail the deployment if the coverage tool reports failing thresholds (`--ci`) |
-| `--coverage-base <branch>` | `main` | Base branch used for new-code analysis (uses `origin/<branch>`) |
+| `--coverage-base <branch>` | `main` | Base branch used for new-code analysis (uses `origin/<branch>` unless a PR base SHA is provided by CI) |
 
 Examples:
 
@@ -54,8 +54,10 @@ These variables can be set in CI:
 |----------|---------|-------------|
 | `SCRY_COVERAGE_ENABLED` | `true` | Set to `false` to disable coverage |
 | `SCRY_COVERAGE_FAIL_ON_THRESHOLD` | `false` | Set to `true` to fail if thresholds not met |
-| `SCRY_COVERAGE_BASE` | `main` | Base branch for new-code analysis |
+| `SCRY_COVERAGE_BASE` | `main` | Base branch for new-code analysis (used when no PR base SHA is provided by CI) |
 | `SCRY_COVERAGE_REPORT` | - | Path to an existing JSON report (skips analysis) |
+
+For accurate PR new-story analysis, ensure your CI runner provides a PR base SHA (for example, GitHub Actions uses `GITHUB_EVENT_PATH` with `pull_request.base.sha`).
 
 ---
 
