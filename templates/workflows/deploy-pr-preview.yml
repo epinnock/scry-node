@@ -34,6 +34,10 @@ jobs:
       - name: Install dependencies
         run: CI=false pnpm install
 
+      - name: Install Playwright (for coverage execution)
+        if: vars.SCRY_COVERAGE_EXECUTE != 'false'
+        run: npx playwright install chromium
+
       - name: Build Storybook
         run: pnpm run build-storybook
 

@@ -461,6 +461,27 @@ async function main() {
 
                 await runInit(initConfig);
             })
+            .command('update-workflows', 'Update GitHub Actions workflows to latest templates', (yargs) => {
+                return yargs
+                    .option('commit', {
+                        describe: 'Commit the updated workflow files',
+                        type: 'boolean',
+                        default: false
+                    })
+                    .option('commit-message', {
+                        describe: 'Custom commit message',
+                        type: 'string',
+                        default: 'chore: update Scry workflows',
+                        alias: 'commitMessage'
+                    })
+                    .option('verbose', {
+                        describe: 'Enable verbose logging',
+                        type: 'boolean',
+                        default: false
+                    });
+            }, async (argv) => {
+                await runUpdateWorkflows(argv);
+            })
             .command('debug-sentry', 'Test Sentry integration by throwing an error', () => {}, () => {
                 throw new Error('Sentry debug error from scry-node CLI');
             })
