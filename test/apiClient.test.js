@@ -23,7 +23,7 @@ describe('lib/apiClient', () => {
 
     await expect(
       requestPresignedUrl(apiClient, { project: 'p', version: 'v' }, { fileName: 'storybook.zip', contentType: 'application/zip' })
-    ).resolves.toBe('https://upload.example.com');
+    ).resolves.toEqual({ url: 'https://upload.example.com', visibility: undefined });
   });
 
   test('requestPresignedUrl() throws if url missing', async () => {
@@ -41,7 +41,30 @@ describe('lib/apiClient', () => {
     ).rejects.toThrow('Failed to get valid presigned URL');
   });
 
+  test('requestPresignedUrl() returns visibility when present', async () => {
+    jest.doMock('axios', () => {
+      const put = jest.fn();
+      const create = jest.fn(() => ({
+        defaults: { baseURL: 'https://api' },
+        post: jest.fn(),
+      }));
+      return { put, create };
+    });
+
+    const { requestPresignedUrl } = require('../lib/apiClient.js');
+
+    const apiClient = {
+      defaults: { baseURL: 'https://api' },
+      post: jest.fn().mockResolvedValue({ data: { url: 'https://upload.example.com', visibility: 'private' } }),
+    };
+
+    await expect(
+      requestPresignedUrl(apiClient, { project: 'p', version: 'v' }, { fileName: 'storybook.zip', contentType: 'application/zip' })
+    ).resolves.toEqual({ url: 'https://upload.example.com', visibility: 'private' });
+  });
+
   test('uploadBuild() uploads zip via presigned URL and coverage via attach endpoint', async () => {
+    jest.useFakeTimers();
     const axiosPut = jest.fn().mockResolvedValue({ status: 200 });
 
     jest.doMock('axios', () => ({
@@ -70,9 +93,12 @@ describe('lib/apiClient', () => {
         .mockResolvedValueOnce({ data: { success: true, buildId: 'build-123', coverageUrl: 'https://r2.example.com/coverage' } }),
     };
 
-    const result = await uploadBuild(apiClient, { project: 'p', version: 'v' }, { zipPath: tmpZip, coverageReport: { ok: true } });
+    const uploadPromise = uploadBuild(apiClient, { project: 'p', version: 'v' }, { zipPath: tmpZip, coverageReport: { ok: true } });
+    await jest.advanceTimersByTimeAsync(5000);
+    const result = await uploadPromise;
 
     expect(result.zipUpload.success).toBe(true);
+    expect(result.zipUpload.visibility).toBeUndefined();
     expect(result.coverageUpload.success).toBe(true);
     expect(result.coverageUpload.buildId).toBe('build-123');
     expect(result.coverageUpload.coverageUrl).toBe('https://r2.example.com/coverage');
@@ -91,6 +117,7 @@ describe('lib/apiClient', () => {
     );
 
     fs.unlinkSync(tmpZip);
+    jest.useRealTimers();
   });
 
   test('uploadCoverageReportDirectly() posts to coverage attach endpoint', async () => {

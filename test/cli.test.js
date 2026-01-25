@@ -9,12 +9,59 @@ describe('bin/cli helpers', () => {
 
     process.env.SCRY_VIEW_URL = 'https://view.scrymore.com/';
 
-    const res = buildDeployResult({ project: 'p', version: 'v' }, { summary: {}, qualityGate: {} });
+    const res = buildDeployResult(
+      { project: 'p', version: 'v' },
+      { summary: {}, qualityGate: {} },
+      { zipUpload: { visibility: 'private' } }
+    );
 
     expect(res.viewUrl).toBe('https://view.scrymore.com/p/v/');
     expect(res.coverageUrl).toBe('https://view.scrymore.com/p/v/coverage-report.json');
+    expect(res.visibility).toBe('private');
 
     delete process.env.SCRY_VIEW_URL;
+  });
+
+  test('logUploadLinks() prints private message when visibility is private', () => {
+    const { logUploadLinks } = require('../bin/cli.js');
+
+    const logger = {
+      info: jest.fn(),
+      debug: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn(),
+    };
+
+    logUploadLinks(
+      { project: 'p', version: 'v' },
+      null,
+      { zipUpload: { visibility: 'private' } },
+      logger
+    );
+
+    const output = logger.info.mock.calls.flat().join(' ');
+    expect(output).toContain('private');
+  });
+
+  test('logUploadLinks() skips private message when visibility is public', () => {
+    const { logUploadLinks } = require('../bin/cli.js');
+
+    const logger = {
+      info: jest.fn(),
+      debug: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn(),
+    };
+
+    logUploadLinks(
+      { project: 'p', version: 'v' },
+      null,
+      { zipUpload: { visibility: 'public' } },
+      logger
+    );
+
+    const output = logger.info.mock.calls.flat().join(' ');
+    expect(output).not.toContain('private');
   });
 
   test('resolveCoverage() returns nulls when coverage disabled', async () => {

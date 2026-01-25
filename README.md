@@ -217,6 +217,28 @@ The configuration is resolved in the following order of precedence:
 3.  **Configuration File**: Values from `.storybook-deployer.json` in your project directory (automatically created during installation).
 4.  **Programmatic Defaults**: Lowest precedence (e.g., for `--api-url`).
 
+## Private Projects
+
+If your project is set to **private** in the Scry dashboard, uploaded Storybook
+and coverage reports will only be accessible to logged-in project members.
+
+### How it works
+
+1. Upload works the same way (using your API key)
+2. The generated links work for anyone who is:
+   - Logged into the Scry dashboard
+   - A member of your project
+
+### Sharing with team members
+
+To give someone access to a private project:
+
+1. Go to your project in the [Scry Dashboard](https://dashboard.scrymore.com)
+2. Navigate to **Settings** → **Members**
+3. Add their email address
+
+They'll need to log in once, then all project links will work automatically.
+
 ### Configuration File
 
 The configuration file (`.storybook-deployer.json`) is automatically created in your project directory when you install the package. You can edit this file to set default values for common options:
