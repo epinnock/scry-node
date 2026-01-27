@@ -15,6 +15,7 @@ const { loadConfig } = require('../lib/config.js');
 const { captureScreenshots } = require('../lib/screencap.js');
 const { analyzeStorybook } = require('../lib/analysis.js');
 const { runCoverageAnalysis, loadCoverageReport, extractCoverageSummary } = require('../lib/coverage.js');
+const { computeTransitions } = require('../lib/transitions.js');
 const { postPRComment } = require('../lib/pr-comment.js');
 const { runInit } = require('../lib/init.js');
 const { runUpdateWorkflows } = require('../lib/update-workflows.js');
@@ -258,6 +259,11 @@ async function main() {
                         describe: 'Path to coverage report JSON file (skip analysis and upload this report)',
                         type: 'string',
                     })
+                    .option('previous-report', {
+                        describe: 'Path to previous coverage report JSON file (emit transitions)',
+                        type: 'string',
+                        alias: 'previousReport'
+                    })
                     .option('coverage-fail-on-threshold', {
                         describe: 'Fail if coverage thresholds are not met',
                         type: 'boolean',
@@ -381,6 +387,11 @@ async function main() {
                         default: false,
                         alias: 'coverageExecute'
                     })
+                    .option('previous-report', {
+                        describe: 'Path to previous coverage report JSON file (emit transitions)',
+                        type: 'string',
+                        alias: 'previousReport'
+                    })
                     .option('output', {
                         describe: 'Where to write the JSON coverage report',
                         type: 'string',
@@ -401,6 +412,7 @@ async function main() {
                     execute: Boolean(argv.coverageExecute),
                     outputPath: argv.output,
                     keepReport: true,
+                    previousReportPath: argv.previousReport || null,
                 });
 
                 if (!report) {
@@ -515,12 +527,20 @@ async function resolveCoverage(argv, logger) {
         if (argv.coverageReport) {
             logger.info(`Coverage: using existing report at ${argv.coverageReport}`);
             report = loadCoverageReport(argv.coverageReport);
+            if (argv.previousReport) {
+                const previous = loadCoverageReport(argv.previousReport);
+                report = {
+                    ...report,
+                    transitions: computeTransitions(previous, report)
+                };
+            }
         } else {
             report = await runCoverageAnalysis({
                 storybookDir: argv.dir,
                 baseBranch: argv.coverageBase || 'main',
                 failOnThreshold: Boolean(argv.coverageFailOnThreshold),
                 execute: Boolean(argv.coverageExecute),
+                previousReportPath: argv.previousReport || null,
             });
         }
 
