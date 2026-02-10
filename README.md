@@ -968,3 +968,5 @@ Need help?
 - 📖 [Documentation](https://github.com/epinnock/scry-node)
 - 🐛 [Report an issue](https://github.com/epinnock/scry-node/issues)
 - 💬 [Discussions](https://github.com/epinnock/scry-node/discussions)
+
+Developed 2026 by Scry
