@@ -75,16 +75,53 @@ describe('lib/coverage', () => {
       );
     });
 
-    const report = await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main' });
+    const result = await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main' });
 
-    expect(report).toEqual({ summary: { metrics: {}, health: {} }, qualityGate: {}, generatedAt: 'x' });
+    expect(result).toEqual({
+      report: { summary: { metrics: {}, health: {} }, qualityGate: {}, generatedAt: 'x' },
+      metadataZipPath: null,
+    });
     expect(fs.existsSync(outPath)).toBe(false);
 
     // Ensure we invoked npx @scrymore/scry-sbcov
     expect(execSync).toHaveBeenCalledWith(expect.stringContaining('@scrymore/scry-sbcov'), expect.any(Object));
   });
 
-  test('runCoverageAnalysis() returns null when tool fails and failOnThreshold=false', async () => {
+  test('runCoverageAnalysis() includes screenshot ZIP flags when enabled', async () => {
+    jest.resetModules();
+
+    const execSync = jest.fn();
+    jest.doMock('child_process', () => ({ execSync }));
+
+    const fixedNow = 1234567891;
+    jest.spyOn(Date, 'now').mockReturnValue(fixedNow);
+
+    const { runCoverageAnalysis } = require('../lib/coverage.js');
+    const outPath = path.join(process.cwd(), `.scry-coverage-report-${fixedNow}.json`);
+
+    execSync.mockImplementation(() => {
+      fs.writeFileSync(
+        outPath,
+        JSON.stringify({ summary: { metrics: {}, health: {} }, qualityGate: {}, generatedAt: 'x' })
+      );
+      fs.writeFileSync('/tmp/meta.zip', 'zip');
+    });
+
+    const result = await runCoverageAnalysis({
+      storybookDir: './storybook-static',
+      screenshots: true,
+      outputZipPath: '/tmp/meta.zip',
+    });
+
+    const calledCommand = execSync.mock.calls[0][0];
+    expect(calledCommand).toContain('--screenshots');
+    expect(calledCommand).toContain('--output-zip');
+    expect(result.metadataZipPath).toBe('/tmp/meta.zip');
+
+    if (fs.existsSync('/tmp/meta.zip')) fs.unlinkSync('/tmp/meta.zip');
+  });
+
+  test('runCoverageAnalysis() returns null report when tool fails and failOnThreshold=false', async () => {
     jest.resetModules();
 
     const execSync = jest.fn(() => {
@@ -96,7 +133,7 @@ describe('lib/coverage', () => {
 
     await expect(
       runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main', failOnThreshold: false })
-    ).resolves.toBeNull();
+    ).resolves.toEqual({ report: null, metadataZipPath: null });
   });
 
   test('runCoverageAnalysis() throws when tool fails and failOnThreshold=true', async () => {
@@ -225,5 +262,33 @@ describe('lib/coverage', () => {
     const calledCommand = execSync.mock.calls[0][0];
     expect(calledCommand).toContain('--base');
     expect(calledCommand).toContain('bbd00fbbd00fbbd00fbbd00fbbd00fbbd00fbbd0');
+  });
+
+  test('runCoverageAnalysis() honors SCRY_SBCOV_CMD override', async () => {
+    jest.resetModules();
+
+    const execSync = jest.fn();
+    jest.doMock('child_process', () => ({ execSync }));
+
+    process.env.SCRY_SBCOV_CMD = 'node /tmp/local-sbcov.js';
+
+    const fixedNow = 1730000000004;
+    jest.spyOn(Date, 'now').mockReturnValue(fixedNow);
+
+    const { runCoverageAnalysis } = require('../lib/coverage.js');
+
+    execSync.mockImplementation(() => {
+      const reportPath = path.join(process.cwd(), `.scry-coverage-report-${fixedNow}.json`);
+      fs.writeFileSync(
+        reportPath,
+        JSON.stringify({ summary: { metrics: {}, health: {} }, qualityGate: {}, generatedAt: 'x' })
+      );
+    });
+
+    await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main' });
+
+    const calledCommand = execSync.mock.calls[0][0];
+    expect(calledCommand).toContain('node /tmp/local-sbcov.js');
+    delete process.env.SCRY_SBCOV_CMD;
   });
 });

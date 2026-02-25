@@ -44,7 +44,7 @@ describe('bin/cli runDeployment()', () => {
     );
   });
 
-  test('deploys with analysis (no screenshots) and with coverage disabled', async () => {
+  test('deploys with analysis using storybook-only ZIP and with coverage disabled', async () => {
     const uploadBuild = jest.fn().mockResolvedValue({ zipUpload: { success: true }, coverageUpload: null });
 
     jest.doMock('../lib/apiClient.js', () => ({
@@ -52,17 +52,11 @@ describe('bin/cli runDeployment()', () => {
       uploadBuild,
     }));
 
-    jest.doMock('../lib/archiveUtils.js', () => ({
-      createMasterZip: jest.fn(async ({ outPath }) => {
+    jest.doMock('../lib/archive.js', () => ({
+      zipDirectory: jest.fn(async (_dir, outPath) => {
         fs.writeFileSync(outPath, 'zip');
       }),
     }));
-
-    jest.doMock('../lib/analysis.js', () => ({
-      analyzeStorybook: jest.fn(() => ({ summary: { totalStories: 0, withScreenshots: 0 } })),
-    }));
-
-    jest.doMock('../lib/screencap.js', () => ({ captureScreenshots: jest.fn(async () => {}) }));
 
     jest.doMock('../lib/pr-comment.js', () => ({ postPRComment: jest.fn(async () => {}) }));
 
@@ -75,13 +69,14 @@ describe('bin/cli runDeployment()', () => {
       apiUrl: 'https://example.invalid',
       apiKey: 'k',
       withAnalysis: true,
-      storybookUrl: '',
-      screenshotsDir: path.join(os.tmpdir(), `shots-${Date.now()}`),
-      storiesDir: null,
       coverage: false,
       verbose: false,
     });
 
-    expect(uploadBuild).toHaveBeenCalled();
+    expect(uploadBuild).toHaveBeenCalledWith(
+      expect.any(Object),
+      { project: 'p', version: 'v' },
+      expect.objectContaining({ metadataZipPath: null })
+    );
   });
 });
