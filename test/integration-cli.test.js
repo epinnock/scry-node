@@ -44,6 +44,9 @@ describe('integration: cli deploy flow (no network)', () => {
       expect(res.error.code).toBe('EPERM');
     } else {
       expect(res.status).toBe(1);
+      const output = (res.stdout || '') + (res.stderr || '');
+      expect(output).toContain('Coverage: using existing report');
+      expect(output).toContain('The deployment service encountered an internal error');
     }
   });
 });
