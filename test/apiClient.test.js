@@ -102,6 +102,7 @@ describe('lib/apiClient', () => {
     expect(result.coverageUpload.success).toBe(true);
     expect(result.coverageUpload.buildId).toBe('build-123');
     expect(result.coverageUpload.coverageUrl).toBe('https://r2.example.com/coverage');
+    expect(result.metadataUpload).toBeNull();
     // ZIP uses presigned URL (1 post for presign, 1 put for upload)
     // Coverage uses attach endpoint (1 post directly)
     expect(apiClient.post).toHaveBeenCalledTimes(2);
@@ -153,5 +154,101 @@ describe('lib/apiClient', () => {
       coverageReport,
       expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
     );
+  });
+
+  test('uploadMetadataZip() posts ZIP to metadata endpoint', async () => {
+    jest.doMock('axios', () => ({
+      put: jest.fn(),
+      create: jest.fn(() => ({ defaults: { baseURL: 'https://api' } })),
+    }));
+
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpZip = path.join(os.tmpdir(), `scry-meta-${Date.now()}.zip`);
+    fs.writeFileSync(tmpZip, Buffer.from('zip'));
+
+    const { uploadMetadataZip } = require('../lib/apiClient.js');
+    const apiClient = {
+      defaults: { baseURL: 'https://api' },
+      post: jest.fn().mockResolvedValue({
+        status: 201,
+        data: { queued: true, buildNumber: 3, zipKey: 'p/v/builds/3/metadata-screenshots.zip' },
+      }),
+    };
+
+    const result = await uploadMetadataZip(
+      apiClient,
+      { project: 'p', version: 'v' },
+      tmpZip,
+      { info: jest.fn(), success: jest.fn(), warn: jest.fn() }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.queued).toBe(true);
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/upload/p/v/metadata',
+      expect.any(Buffer),
+      expect.objectContaining({ headers: { 'Content-Type': 'application/zip' } })
+    );
+
+    fs.unlinkSync(tmpZip);
+  });
+
+  test('uploadBuild() uploads metadata ZIP when metadataZipPath provided', async () => {
+    jest.useFakeTimers();
+    const axiosPut = jest.fn().mockResolvedValue({ status: 200 });
+
+    jest.doMock('axios', () => ({
+      put: axiosPut,
+      create: jest.fn(() => ({
+        defaults: { baseURL: 'https://api' },
+      })),
+    }));
+
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+
+    const tmpZip = path.join(os.tmpdir(), `scry-zip-${Date.now()}.zip`);
+    const tmpMeta = path.join(os.tmpdir(), `scry-meta-${Date.now()}.zip`);
+    fs.writeFileSync(tmpZip, Buffer.from('zip'));
+    fs.writeFileSync(tmpMeta, Buffer.from('meta'));
+
+    const { uploadBuild } = require('../lib/apiClient.js');
+
+    const apiClient = {
+      defaults: { baseURL: 'https://api' },
+      post: jest
+        .fn()
+        .mockResolvedValueOnce({ data: { url: 'https://upload.example.com/storybook' } })
+        .mockResolvedValueOnce({ data: { success: true, buildId: 'build-123', coverageUrl: 'https://r2.example.com/coverage' } })
+        .mockResolvedValueOnce({
+          status: 201,
+          data: { queued: true, buildNumber: 5, zipKey: 'p/v/builds/5/metadata-screenshots.zip' },
+        }),
+    };
+
+    const uploadPromise = uploadBuild(
+      apiClient,
+      { project: 'p', version: 'v' },
+      { zipPath: tmpZip, coverageReport: { ok: true }, metadataZipPath: tmpMeta }
+    );
+    await jest.advanceTimersByTimeAsync(5000);
+    const result = await uploadPromise;
+
+    expect(result.metadataUpload).toEqual(
+      expect.objectContaining({ success: true, queued: true, buildNumber: 5 })
+    );
+    expect(apiClient.post).toHaveBeenNthCalledWith(
+      3,
+      '/upload/p/v/metadata',
+      expect.any(Buffer),
+      expect.objectContaining({ headers: { 'Content-Type': 'application/zip' } })
+    );
+
+    fs.unlinkSync(tmpZip);
+    fs.unlinkSync(tmpMeta);
+    jest.useRealTimers();
   });
 });

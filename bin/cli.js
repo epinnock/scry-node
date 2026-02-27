@@ -85,96 +85,56 @@ async function runDeployment(argv) {
     logger.debug(`Received arguments: ${JSON.stringify(argv)}`);
 
     const outPath = path.join(os.tmpdir(), `storybook-deployment-${Date.now()}.zip`);
+    let metadataZipPath = null;
 
     try {
-        const { coverageReport, coverageSummary } = await resolveCoverage(argv, logger);
+        const coverage = await resolveCoverage(argv, logger);
+        const coverageReport = coverage.coverageReport;
+        const coverageSummary = coverage.coverageSummary;
+        metadataZipPath = coverage.metadataZipPath;
 
         if (argv.withAnalysis) {
-            // Full deployment with analysis
             logger.info('Running deployment with analysis...');
-
-            // 1. Capture screenshots if storybook URL provided
-            if (argv.storybookUrl) {
-                logger.info(`1/5: Capturing screenshots from '${argv.storybookUrl}'...`);
-                await captureScreenshots(argv.storybookUrl, argv.storycapOptions || {});
-                logger.success('✅ Screenshots captured');
-            } else {
-                logger.info('1/5: Skipping screenshot capture (no Storybook URL provided)');
-            }
-
-            // 2. Analyze stories and map screenshots
-            logger.info('2/5: Analyzing stories and mapping screenshots...');
-            const analysisResults = analyzeStorybook({
-                storiesDir: argv.storiesDir,
-                screenshotsDir: argv.screenshotsDir,
-                project: argv.project,
-                version: argv.version
-            });
-            logger.success(`✅ Found ${analysisResults.summary.totalStories} stories (${analysisResults.summary.withScreenshots} with screenshots)`);
-
-            // 3. Create master ZIP with staticsite, images, and metadata
-            logger.info('3/5: Creating master archive with static site, images, and metadata...');
-            await createMasterZip({
-                outPath: outPath,
-                staticsiteDir: argv.dir,
-                screenshotsDir: argv.screenshotsDir,
-                metadata: analysisResults
-            });
-            logger.success(`✅ Master archive created: ${outPath}`);
-            logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
-
-            // 4. Upload archive (+ optional coverage)
-            logger.info('4/5: Uploading to deployment service...');
-            const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-            const uploadResult = await uploadBuild(
-                apiClient,
-                {
-                    project: argv.project,
-                    version: argv.version,
-                },
-                { zipPath: outPath, coverageReport }
-            );
-            logger.success('✅ Archive uploaded.');
-            logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
-
-            await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
-
-            logger.success('\n🎉 Deployment with analysis successful! 🎉');
-            logUploadLinks(argv, coverageSummary, uploadResult, logger);
-
-        } else {
-            // Simple deployment without analysis
-            // 1. Archive the directory
-            logger.info(`1/3: Zipping directory '${argv.dir}'...`);
-            await zipDirectory(argv.dir, outPath);
-            logger.success(`✅ Archive created: ${outPath}`);
-            logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
-
-            // 2. Authenticate and upload directly (+ optional coverage)
-            logger.info('2/3: Uploading to deployment service...');
-            const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-            const uploadResult = await uploadBuild(
-                apiClient,
-                {
-                    project: argv.project,
-                    version: argv.version,
-                },
-                { zipPath: outPath, coverageReport }
-            );
-            logger.success('✅ Archive uploaded.');
-            logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
-
-            await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
-
-            logger.success('\n🎉 Deployment successful! 🎉');
-            logUploadLinks(argv, coverageSummary, uploadResult, logger);
         }
+
+        // 1. Archive only the static Storybook files.
+        logger.info(`1/3: Zipping directory '${argv.dir}'...`);
+        await zipDirectory(argv.dir, outPath);
+        logger.success(`✅ Archive created: ${outPath}`);
+        logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
+
+        // 2. Upload Storybook ZIP + coverage + metadata ZIP (if present).
+        logger.info('2/3: Uploading to deployment service...');
+        const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
+        const uploadResult = await uploadBuild(
+            apiClient,
+            {
+                project: argv.project,
+                version: argv.version,
+            },
+            {
+                zipPath: outPath,
+                coverageReport,
+                metadataZipPath,
+            }
+        );
+        logger.success('✅ Archive uploaded.');
+        logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
+
+        await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
+
+        logger.success('\n🎉 Deployment successful! 🎉');
+        logUploadLinks(argv, coverageSummary, uploadResult, logger);
 
     } finally {
         // 4. Clean up the local archive
         if (fs.existsSync(outPath)) {
             fs.unlinkSync(outPath);
             logger.info(`🧹 Cleaned up temporary file: ${outPath}`);
+        }
+        if (metadataZipPath && fs.existsSync(metadataZipPath)) {
+            fs.unlinkSync(metadataZipPath);
+            logger.info(`🧹 Cleaned up temporary file: ${metadataZipPath}`);
         }
     }
 }
@@ -394,7 +354,7 @@ async function main() {
             }, async (argv) => {
                 const logger = createLogger(argv);
 
-                const report = await runCoverageAnalysis({
+                const result = await runCoverageAnalysis({
                     storybookDir: argv.dir,
                     baseBranch: argv.coverageBase || 'main',
                     failOnThreshold: Boolean(argv.coverageFailOnThreshold),
@@ -402,6 +362,7 @@ async function main() {
                     outputPath: argv.output,
                     keepReport: true,
                 });
+                const report = result.report;
 
                 if (!report) {
                     logger.error('Coverage: no report generated (tool failed or returned null)');
@@ -485,22 +446,32 @@ async function resolveCoverage(argv, logger) {
     const enabled = argv.coverage !== false;
     if (!enabled) {
         logger.info('Coverage: disabled (--no-coverage)');
-        return { coverageReport: null, coverageSummary: null };
+        return { coverageReport: null, coverageSummary: null, metadataZipPath: null };
     }
 
     try {
         let report = null;
+        let metadataZipPath = null;
 
         if (argv.coverageReport) {
             logger.info(`Coverage: using existing report at ${argv.coverageReport}`);
             report = loadCoverageReport(argv.coverageReport);
         } else {
-            report = await runCoverageAnalysis({
+            const needsScreenshots = Boolean(argv.withAnalysis);
+            const outputZipPath = needsScreenshots
+                ? path.join(os.tmpdir(), `scry-metadata-${Date.now()}.zip`)
+                : null;
+
+            const result = await runCoverageAnalysis({
                 storybookDir: argv.dir,
                 baseBranch: argv.coverageBase || 'main',
                 failOnThreshold: Boolean(argv.coverageFailOnThreshold),
-                execute: Boolean(argv.coverageExecute),
+                execute: Boolean(argv.coverageExecute) || needsScreenshots,
+                screenshots: needsScreenshots,
+                outputZipPath,
             });
+            report = result.report;
+            metadataZipPath = result.metadataZipPath;
         }
 
         const summary = extractCoverageSummary(report);
@@ -511,7 +482,7 @@ async function resolveCoverage(argv, logger) {
             logger.info('Coverage: no report generated (tool failed or report shape unexpected)');
         }
 
-        return { coverageReport: report, coverageSummary: summary };
+        return { coverageReport: report, coverageSummary: summary, metadataZipPath };
     } catch (err) {
         logger.error(`Coverage: failed (${err.message})`);
         throw err;
