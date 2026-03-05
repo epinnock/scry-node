@@ -12,8 +12,8 @@ importers:
         specifier: ^20.0.0
         version: 20.1.2
       '@scrymore/scry-sbcov':
-        specifier: ^0.2.2
-        version: 0.2.2(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)
+        specifier: ^0.3.0
+        version: 0.3.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)
       '@sentry/node':
         specifier: ^10.33.0
         version: 10.33.0
@@ -844,8 +844,8 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.8
 
-  '@scrymore/scry-sbcov@0.2.2':
-    resolution: {integrity: sha512-ztp03ooK/3ESp5swC/O1/WQfL+b1oy2D50sRc+M+z2zfyNRCuDZHdPATA91R+VxJz2P6grk6j0epgSCj6YhqRA==}
+  '@scrymore/scry-sbcov@0.3.0':
+    resolution: {integrity: sha512-8+sIlcoS02h9lGpDl42Nqt0NSL3ImFInVykB7p6QQonu6aT77HsmSjPbR/m4b/4c5szUFhSUV6sO7r9EnUlg0Q==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     peerDependencies:
@@ -4015,9 +4015,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@scrymore/scry-sbcov@0.2.2(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)':
+  '@scrymore/scry-sbcov@0.3.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)':
     dependencies:
       '@storybook/csf-tools': 8.6.14(storybook@8.6.15(prettier@2.8.8))
+      archiver: 7.0.1
       chalk: 5.6.2
       commander: 12.1.0
       glob: 10.5.0
@@ -4028,6 +4029,8 @@ snapshots:
     optionalDependencies:
       playwright: 1.57.0
     transitivePeerDependencies:
+      - bare-abort-controller
+      - react-native-b4a
       - storybook
       - supports-color
 
