@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+### Patch Changes
+
+- a1a8178: Fix TypeError crash when metadata ZIP upload fails (logger.warn → logger.error)
+
 ## 0.2.1
 
 ### Patch Changes
