@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+### Patch Changes
+
+- a671ab2: Bump @scrymore/scry-sbcov dependency to ^0.3.0 for screenshot-metadata zip support
+
 ## 0.1.0
 
 ### Minor Changes
