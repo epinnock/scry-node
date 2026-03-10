@@ -48,6 +48,7 @@ jobs:
             ${{ vars.SCRY_COVERAGE_ENABLED == 'false' && '--no-coverage' || '' }} \
             ${{ vars.SCRY_COVERAGE_FAIL_ON_THRESHOLD == 'true' && '--coverage-fail-on-threshold' || '' }} \
             ${{ vars.SCRY_COVERAGE_EXECUTE == 'false' && '' || '--coverage-execute' }} \
+            --with-analysis \
             --coverage-base ${{ vars.SCRY_COVERAGE_BASE || format('origin/{0}', github.base_ref) }}
 
           # Construct deployment URL using VIEW_URL (where users access the deployed Storybook)

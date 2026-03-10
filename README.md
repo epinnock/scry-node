@@ -184,7 +184,7 @@ The CLI is configured through a combination of command-line options and environm
 | `--api-url`    | `STORYBOOK_DEPLOYER_API_URL`          | Base URL for the deployment service API.                       | No       | `https://api.default-service.com/v1`  |
 | `--project`    | `STORYBOOK_DEPLOYER_PROJECT`          | The project name/identifier.                                   | No       | `main`                               |
 | `--version`    | `STORYBOOK_DEPLOYER_VERSION`          | The version identifier for the deployment.                     | No       | `latest`                             |
-| `--with-analysis` | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | Enable Storybook analysis (story crawling + screenshots).      | No       | `false`                              |
+| `--with-analysis` | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | Enable Storybook analysis (story crawling + screenshots). Enabled by default in generated workflows. | No       | `false`                              |
 | `--stories-dir` | `STORYBOOK_DEPLOYER_STORIES_DIR`     | Path to stories directory (optional, auto-detects .stories.* files). | No | Auto-detect                          |
 | `--screenshots-dir` | `STORYBOOK_DEPLOYER_SCREENSHOTS_DIR` | Directory for captured screenshots.                        | No       | `./screenshots`                      |
 | `--storybook-url` | `STORYBOOK_DEPLOYER_STORYBOOK_URL` | URL of running Storybook server for screenshot capture.        | No       | `http://localhost:6006`              |
@@ -431,6 +431,8 @@ If you're installing from GitHub, the workflow file is already included.
 
 **Note:** The `SCRY_VIEW_URL` is where users will access your deployed Storybook (e.g., `https://view.scrymore.com/{project}/pr-{number}/`). This is separate from `SCRY_API_URL`, which is the backend API endpoint used for uploads.
 
+**Note:** Generated workflows include `--with-analysis` by default for build processing service integration. To disable, add `STORYBOOK_DEPLOYER_WITH_ANALYSIS` as a repository variable set to `false`.
+
 **Step 3: Configure GitHub Actions Secrets (Optional)**
 
 If your backend requires authentication:
@@ -508,6 +510,7 @@ The PR preview workflow uses these environment variables (configured via GitHub 
 | `SCRY_API_URL` | GitHub Variable | **Yes** | Backend API endpoint for uploads |
 | `SCRY_VIEW_URL` | GitHub Variable | No | Base URL where users view Storybooks (default: `https://view.scrymore.com`) |
 | `SCRY_API_KEY` | GitHub Secret | No | API authentication key (if required) |
+| `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | GitHub Variable | No | Set to `false` to disable build processing service integration (enabled by default in generated workflows) |
 
 **Important:** `SCRY_API_URL` (where files are uploaded) and `SCRY_VIEW_URL` (where users view the deployed Storybook) are two different URLs:
 - **API URL**: Backend service endpoint (e.g., `https://api.scrymore.com`)
