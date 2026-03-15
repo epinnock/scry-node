@@ -18,6 +18,7 @@ const { runCoverageAnalysis, loadCoverageReport, extractCoverageSummary } = requ
 const { postPRComment } = require('../lib/pr-comment.js');
 const { runInit } = require('../lib/init.js');
 const { runUpdateWorkflows } = require('../lib/update-workflows.js');
+const { runQueueImageUpload } = require('../lib/imageUpload.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -421,6 +422,46 @@ async function main() {
                 };
 
                 await runInit(initConfig);
+            })
+            .command('upload-images', 'Upload a folder of images for search indexing', (yargs) => {
+                return yargs
+                    .option('dir', {
+                        describe: 'Path to the image directory',
+                        type: 'string',
+                        demandOption: true,
+                    })
+                    .option('project', {
+                        describe: 'Project name/identifier',
+                        type: 'string',
+                        demandOption: true,
+                    })
+                    .option('api-key', {
+                        describe: 'API key for the deployment service',
+                        type: 'string',
+                    })
+                    .option('api-url', {
+                        describe: 'Base URL for the deployment service API',
+                        type: 'string',
+                    })
+                    .option('verbose', {
+                        describe: 'Enable verbose logging',
+                        type: 'boolean',
+                    });
+            }, async (argv) => {
+                config = loadConfig(argv);
+
+                if (!config.dir) {
+                    throw new Error('--dir is required. Provide a path to the image directory.');
+                }
+
+                if (!fs.existsSync(config.dir)) {
+                    throw new Error(`Directory not found: ${config.dir}`);
+                }
+                if (!fs.lstatSync(config.dir).isDirectory()) {
+                    throw new Error(`Path is not a directory: ${config.dir}`);
+                }
+
+                await runQueueImageUpload(config);
             })
             .command('debug-sentry', 'Test Sentry integration by throwing an error', () => {}, () => {
                 throw new Error('Sentry debug error from scry-node CLI');
