@@ -19,6 +19,7 @@ const { postPRComment } = require('../lib/pr-comment.js');
 const { runInit } = require('../lib/init.js');
 const { runUpdateWorkflows } = require('../lib/update-workflows.js');
 const { runQueueImageUpload } = require('../lib/imageUpload.js');
+const { runLocalImageProcessing } = require('../lib/localImageProcessing.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -435,12 +436,37 @@ async function main() {
                         type: 'string',
                         demandOption: true,
                     })
+                    .option('local', {
+                        describe: 'Process images locally instead of uploading to the queue',
+                        type: 'boolean',
+                        default: false,
+                    })
+                    .option('openai-api-key', {
+                        describe: 'OpenAI API key (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('jina-api-key', {
+                        describe: 'Jina API key (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('milvus-address', {
+                        describe: 'Milvus/Zilliz endpoint (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('milvus-token', {
+                        describe: 'Milvus/Zilliz auth token (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('milvus-collection', {
+                        describe: 'Milvus collection name (for --local mode)',
+                        type: 'string',
+                    })
                     .option('api-key', {
-                        describe: 'API key for the deployment service',
+                        describe: 'API key for the deployment service (queue mode)',
                         type: 'string',
                     })
                     .option('api-url', {
-                        describe: 'Base URL for the deployment service API',
+                        describe: 'Base URL for the deployment service API (queue mode)',
                         type: 'string',
                     })
                     .option('verbose', {
@@ -461,7 +487,33 @@ async function main() {
                     throw new Error(`Path is not a directory: ${config.dir}`);
                 }
 
-                await runQueueImageUpload(config);
+                if (config.local) {
+                    // Local mode: process images directly via LLM + embeddings + Milvus
+                    const openaiApiKey = config.openaiApiKey || process.env.OPENAI_API_KEY;
+                    const jinaApiKey = config.jinaApiKey || process.env.JINA_API_KEY;
+                    const milvusAddress = config.milvusAddress || process.env.MILVUS_ADDRESS;
+                    const milvusToken = config.milvusToken || process.env.MILVUS_TOKEN;
+                    const milvusCollection = config.milvusCollection || process.env.MILVUS_COLLECTION;
+
+                    if (!openaiApiKey) throw new Error('--openai-api-key or OPENAI_API_KEY env var is required for local mode');
+                    if (!jinaApiKey) throw new Error('--jina-api-key or JINA_API_KEY env var is required for local mode');
+                    if (!milvusAddress) throw new Error('--milvus-address or MILVUS_ADDRESS env var is required for local mode');
+                    if (!milvusToken) throw new Error('--milvus-token or MILVUS_TOKEN env var is required for local mode');
+                    if (!milvusCollection) throw new Error('--milvus-collection or MILVUS_COLLECTION env var is required for local mode');
+
+                    await runLocalImageProcessing({
+                        dir: config.dir,
+                        project: config.project,
+                        openaiApiKey,
+                        jinaApiKey,
+                        milvusAddress,
+                        milvusToken,
+                        milvusCollection,
+                        verbose: config.verbose,
+                    });
+                } else {
+                    await runQueueImageUpload(config);
+                }
             })
             .command('debug-sentry', 'Test Sentry integration by throwing an error', () => {}, () => {
                 throw new Error('Sentry debug error from scry-node CLI');
