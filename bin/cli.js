@@ -184,7 +184,6 @@ async function main() {
         environment: process.env.NODE_ENV || 'production',
     });
 
-    let config;
     try {
         const args = await yargs(hideBin(process.argv))
             .command('$0', 'Deploy Storybook static build', (yargs) => {
@@ -257,7 +256,7 @@ async function main() {
                     });
             }, async (argv) => {
                 // Load and merge configuration
-                config = loadConfig(argv);
+                const config = loadConfig(argv);
 
                 // Validate required fields
                 if (!config.dir) {
@@ -313,7 +312,7 @@ async function main() {
                     });
             }, async (argv) => {
                 // Load and merge configuration
-                config = loadConfig(argv);
+                const config = loadConfig(argv);
 
                 await runAnalysis(config);
             })
@@ -474,7 +473,7 @@ async function main() {
                         type: 'boolean',
                     });
             }, async (argv) => {
-                config = loadConfig(argv);
+                const config = loadConfig(argv);
 
                 if (!config.dir) {
                     throw new Error('--dir is required. Provide a path to the image directory.');
@@ -489,26 +488,26 @@ async function main() {
 
                 if (config.local) {
                     // Local mode: process images directly via LLM + embeddings + Milvus
-                    const openaiApiKey = config.openaiApiKey || process.env.OPENAI_API_KEY;
-                    const jinaApiKey = config.jinaApiKey || process.env.JINA_API_KEY;
-                    const milvusAddress = config.milvusAddress || process.env.MILVUS_ADDRESS;
-                    const milvusToken = config.milvusToken || process.env.MILVUS_TOKEN;
-                    const milvusCollection = config.milvusCollection || process.env.MILVUS_COLLECTION;
+                    const requiredLocalKeys = {
+                        openaiApiKey: { flag: '--openai-api-key', env: 'OPENAI_API_KEY' },
+                        jinaApiKey: { flag: '--jina-api-key', env: 'JINA_API_KEY' },
+                        milvusAddress: { flag: '--milvus-address', env: 'MILVUS_ADDRESS' },
+                        milvusToken: { flag: '--milvus-token', env: 'MILVUS_TOKEN' },
+                        milvusCollection: { flag: '--milvus-collection', env: 'MILVUS_COLLECTION' },
+                    };
 
-                    if (!openaiApiKey) throw new Error('--openai-api-key or OPENAI_API_KEY env var is required for local mode');
-                    if (!jinaApiKey) throw new Error('--jina-api-key or JINA_API_KEY env var is required for local mode');
-                    if (!milvusAddress) throw new Error('--milvus-address or MILVUS_ADDRESS env var is required for local mode');
-                    if (!milvusToken) throw new Error('--milvus-token or MILVUS_TOKEN env var is required for local mode');
-                    if (!milvusCollection) throw new Error('--milvus-collection or MILVUS_COLLECTION env var is required for local mode');
+                    const resolved = {};
+                    for (const [key, { flag, env }] of Object.entries(requiredLocalKeys)) {
+                        resolved[key] = config[key] || process.env[env];
+                        if (!resolved[key]) {
+                            throw new Error(`${flag} or ${env} env var is required for local mode`);
+                        }
+                    }
 
                     await runLocalImageProcessing({
                         dir: config.dir,
                         project: config.project,
-                        openaiApiKey,
-                        jinaApiKey,
-                        milvusAddress,
-                        milvusToken,
-                        milvusCollection,
+                        ...resolved,
                         verbose: config.verbose,
                     });
                 } else {
@@ -525,7 +524,7 @@ async function main() {
             .parse();
 
     } catch (error) {
-        await handleError(error, config);
+        await handleError(error, error.config || {});
     }
 }
 
