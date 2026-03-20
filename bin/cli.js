@@ -18,6 +18,8 @@ const { runCoverageAnalysis, loadCoverageReport, extractCoverageSummary } = requ
 const { postPRComment } = require('../lib/pr-comment.js');
 const { runInit } = require('../lib/init.js');
 const { runUpdateWorkflows } = require('../lib/update-workflows.js');
+const { runQueueImageUpload } = require('../lib/imageUpload.js');
+const { runLocalImageProcessing } = require('../lib/localImageProcessing.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -182,7 +184,6 @@ async function main() {
         environment: process.env.NODE_ENV || 'production',
     });
 
-    let config;
     try {
         const args = await yargs(hideBin(process.argv))
             .command('$0', 'Deploy Storybook static build', (yargs) => {
@@ -255,7 +256,7 @@ async function main() {
                     });
             }, async (argv) => {
                 // Load and merge configuration
-                config = loadConfig(argv);
+                const config = loadConfig(argv);
 
                 // Validate required fields
                 if (!config.dir) {
@@ -311,7 +312,7 @@ async function main() {
                     });
             }, async (argv) => {
                 // Load and merge configuration
-                config = loadConfig(argv);
+                const config = loadConfig(argv);
 
                 await runAnalysis(config);
             })
@@ -422,6 +423,97 @@ async function main() {
 
                 await runInit(initConfig);
             })
+            .command('upload-images', 'Upload a folder of images for search indexing', (yargs) => {
+                return yargs
+                    .option('dir', {
+                        describe: 'Path to the image directory',
+                        type: 'string',
+                        demandOption: true,
+                    })
+                    .option('project', {
+                        describe: 'Project name/identifier',
+                        type: 'string',
+                        demandOption: true,
+                    })
+                    .option('local', {
+                        describe: 'Process images locally instead of uploading to the queue',
+                        type: 'boolean',
+                        default: false,
+                    })
+                    .option('openai-api-key', {
+                        describe: 'OpenAI API key (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('jina-api-key', {
+                        describe: 'Jina API key (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('milvus-address', {
+                        describe: 'Milvus/Zilliz endpoint (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('milvus-token', {
+                        describe: 'Milvus/Zilliz auth token (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('milvus-collection', {
+                        describe: 'Milvus collection name (for --local mode)',
+                        type: 'string',
+                    })
+                    .option('api-key', {
+                        describe: 'API key for the deployment service (queue mode)',
+                        type: 'string',
+                    })
+                    .option('api-url', {
+                        describe: 'Base URL for the deployment service API (queue mode)',
+                        type: 'string',
+                    })
+                    .option('verbose', {
+                        describe: 'Enable verbose logging',
+                        type: 'boolean',
+                    });
+            }, async (argv) => {
+                const config = loadConfig(argv);
+
+                if (!config.dir) {
+                    throw new Error('--dir is required. Provide a path to the image directory.');
+                }
+
+                if (!fs.existsSync(config.dir)) {
+                    throw new Error(`Directory not found: ${config.dir}`);
+                }
+                if (!fs.lstatSync(config.dir).isDirectory()) {
+                    throw new Error(`Path is not a directory: ${config.dir}`);
+                }
+
+                if (config.local) {
+                    // Local mode: process images directly via LLM + embeddings + Milvus
+                    const requiredLocalKeys = {
+                        openaiApiKey: { flag: '--openai-api-key', env: 'OPENAI_API_KEY' },
+                        jinaApiKey: { flag: '--jina-api-key', env: 'JINA_API_KEY' },
+                        milvusAddress: { flag: '--milvus-address', env: 'MILVUS_ADDRESS' },
+                        milvusToken: { flag: '--milvus-token', env: 'MILVUS_TOKEN' },
+                        milvusCollection: { flag: '--milvus-collection', env: 'MILVUS_COLLECTION' },
+                    };
+
+                    const resolved = {};
+                    for (const [key, { flag, env }] of Object.entries(requiredLocalKeys)) {
+                        resolved[key] = config[key] || process.env[env];
+                        if (!resolved[key]) {
+                            throw new Error(`${flag} or ${env} env var is required for local mode`);
+                        }
+                    }
+
+                    await runLocalImageProcessing({
+                        dir: config.dir,
+                        project: config.project,
+                        ...resolved,
+                        verbose: config.verbose,
+                    });
+                } else {
+                    await runQueueImageUpload(config);
+                }
+            })
             .command('debug-sentry', 'Test Sentry integration by throwing an error', () => {}, () => {
                 throw new Error('Sentry debug error from scry-node CLI');
             })
@@ -432,7 +524,7 @@ async function main() {
             .parse();
 
     } catch (error) {
-        await handleError(error, config);
+        await handleError(error, error.config || {});
     }
 }
 
