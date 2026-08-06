@@ -125,8 +125,29 @@ async function runDeployment(argv) {
 
         await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
 
-        logger.success('\n🎉 Deployment successful! 🎉');
+        // Report only what actually completed. Uploading is synchronous;
+        // indexing is not. A build can fail in the queue seconds after this
+        // point — during one run the pipeline died 7s later on a revoked
+        // credential — and this command previously printed
+        // "Deployment successful" over it, sending people looking for the
+        // cause three steps downstream (ISSUES.md #4).
+        logger.success('\n✅ Upload complete.');
         logUploadLinks(argv, coverageSummary, uploadResult, logger);
+
+        if (uploadResult?.metadataUpload?.queued) {
+            logger.info(
+                '\n⏳ Indexing has been queued, not finished.\n' +
+                '   This command cannot confirm it succeeded. Components will not be\n' +
+                '   searchable until processing completes, and a failed build reports\n' +
+                '   nothing here. Before relying on search, confirm the build shows\n' +
+                "   processingStatus 'completed' rather than 'failed'."
+            );
+        } else if (uploadResult?.metadataUpload) {
+            logger.warn(
+                '\n⚠️  Metadata was uploaded but not queued for processing.\n' +
+                '   The Storybook is hosted, but its components are NOT being indexed.'
+            );
+        }
 
     } finally {
         // 4. Clean up the local archive
