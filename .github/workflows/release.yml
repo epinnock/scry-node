@@ -5,7 +5,17 @@ on:
     branches:
       - main
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+# cancel-in-progress so a stuck run cannot block every future release. Without
+# it, a run that wedges (as one did after an NPM_TOKEN rotation — GitHub
+# reported it "queued" while the API refused to cancel it as "not yet queued")
+# holds this group indefinitely and every later push queues behind it forever.
+#
+# Superseding is the right behaviour here anyway: a newer commit on main is what
+# should be published, and `changeset publish` skips versions already on the
+# registry, so cancelling a partially-run publish cannot double-publish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   release:
