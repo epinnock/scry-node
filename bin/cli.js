@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const Sentry = require('@sentry/node');
+const { initTelemetry, captureCliError, flushTelemetry } = require('../lib/telemetry.js');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const fs = require('fs');
@@ -166,21 +166,12 @@ async function handleError(error, argv) {
     const logger = createLogger(argv || {});
     logger.error(`\n❌ Error: ${error.message}`);
 
-    // Capture error in Sentry with additional context
-    Sentry.withScope((scope) => {
-        if (argv) {
-            scope.setTags({
-                project: argv.project,
-                version: argv.version,
-                command: argv._ ? argv._[0] : 'unknown',
-            });
-            scope.setExtra('argv', argv);
-        }
-        Sentry.captureException(error);
-    });
-    
+    // Report with an allowlisted subset of argv. Sending argv wholesale shipped
+    // the customer's --api-key to Sentry on every error.
+    captureCliError(error, argv);
+
     // Ensure the event is sent before the process exits
-    await Sentry.close(2000);
+    await flushTelemetry(2000);
 
     if (error instanceof ApiError) {
         if (error.statusCode === 401) {
@@ -198,12 +189,9 @@ async function handleError(error, argv) {
 }
 
 async function main() {
-    // Initialize Sentry
-    Sentry.init({
-        dsn: "https://c66ce229a1db2289f145eebd02436d9c@o4507889391828992.ingest.us.sentry.io/4510699330732032", // Fallback to hardcoded DSN for user reporting
-        tracesSampleRate: 1.0,
-        environment: process.env.NODE_ENV || 'production',
-    });
+    // Error reporting. Opt out with SCRY_TELEMETRY=0 or DO_NOT_TRACK=1.
+    // Configuration and scrubbing live in lib/telemetry.js.
+    initTelemetry();
 
     try {
         const args = await yargs(hideBin(process.argv))
