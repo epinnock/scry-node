@@ -835,6 +835,31 @@ Then update the `if` condition in the notification steps:
 
 ---
 
+## 📊 Error Reporting
+
+When a deploy fails, this CLI reports the error to Scry so we can fix it. It runs on
+your machine, so it is worth being precise about what leaves it.
+
+**Sent:** the error and its stack trace, the CLI and Node versions, the platform, and
+the project id, deploy version, branch and whether analysis was enabled.
+
+**Not sent:** your API key, presigned upload URLs and their signatures, absolute file
+paths, your hostname or username, your component names, and your source code. Stack
+frames are reduced to file basenames, and anything resembling a credential is redacted
+before the report is sent — including the signed URLs that upload errors would
+otherwise quote in full.
+
+Nothing is reported on a successful run.
+
+**To opt out**, set either variable:
+
+```bash
+export SCRY_TELEMETRY=0     # Scry-specific
+export DO_NOT_TRACK=1       # respected across many CLI tools
+```
+
+Both are honoured everywhere, including CI.
+
 ## 🔧 Troubleshooting the Init Command
 
 ### Command fails with "Not a git repository"
