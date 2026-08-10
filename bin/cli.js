@@ -409,9 +409,13 @@ async function main() {
                         alias: 'skipGhSetup'
                     })
                     .option('commit-api-key', {
-                        describe: 'Commit API key in config file (not recommended)',
+                        describe: 'Write the API key into the committed config file (not recommended)',
                         type: 'boolean',
-                        default: true,
+                        // False by default. The description has always said "not
+                        // recommended" while the default said otherwise, and the
+                        // default won: every `init` wrote a customer's key into a
+                        // file it then committed.
+                        default: false,
                         alias: 'commitApiKey'
                     })
                     .option('verbose', {
