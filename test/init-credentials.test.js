@@ -127,3 +127,40 @@ describe('gitCommit', () => {
     expect(init.gitCommit(silent).success).toBe(false);
   });
 });
+
+/**
+ * ISSUES.md #26.
+ *
+ * The workflow `init` generates had no Playwright install step, so screenshot
+ * capture failed for every story, no metadata archive was produced, and nothing
+ * was ever indexed — while the deploy exited 0 and the workflow went green.
+ * Proved on a real repository: CI passed, and the project recorded
+ * `storybook_uploaded` and nothing else.
+ *
+ * `npx` cannot be assumed either. Under pnpm it resolves against the
+ * pnpm-managed environment and reports "playwright: not found" (exit 127), even
+ * with --yes.
+ */
+describe('generated workflows', () => {
+  const templates = require('../lib/templates.js');
+
+  for (const gen of ['generateMainWorkflow', 'generatePRWorkflow']) {
+    it(`${gen} installs a browser before deploying`, () => {
+      const yaml = templates[gen]('proj', 'https://api.example.com', 'npm', 'build-storybook');
+
+      expect(yaml).toMatch(/playwright install/);
+      // Order matters: a browser installed after the deploy helps nobody.
+      expect(yaml.indexOf('playwright install')).toBeLessThan(yaml.indexOf('scry-deployer'));
+    });
+  }
+
+  it.each([
+    ['npm', 'npx --yes playwright install'],
+    ['pnpm', 'pnpm dlx playwright install'],
+    ['yarn', 'yarn dlx playwright install'],
+  ])('uses the right fetch command for %s', (pm, expected) => {
+    const yaml = templates.generateMainWorkflow('proj', 'https://api.example.com', pm, 'build-storybook');
+
+    expect(yaml).toContain(expected);
+  });
+});
