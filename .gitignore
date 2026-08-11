@@ -140,3 +140,20 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Local scratch scripts — one-off data-processing runs, never part of the package.
+# Several contain hardcoded API keys, and `git add -A` has swept them into a
+# commit twice; GitHub push protection caught it both times. Listed explicitly
+# rather than ignoring scripts/ wholesale, so a genuinely new script is still
+# picked up — scripts/postinstall.js is tracked and must stay that way.
+#
+# Note: a `#` only starts a comment at the beginning of a line. Never put one
+# after a pattern; the pattern silently stops matching. See ISSUES.md #23.
+scripts/local-*
+scripts/bulk-import-*
+scripts/gpu-process-*
+scripts/reprocess-*
+scripts/.descriptions/
+scripts/__pycache__/
+scripts/.airbnb-gpu-progress.json
+scripts/.gpu-bulk-progress.json
