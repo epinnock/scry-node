@@ -65,3 +65,65 @@ describe('createConfigFile', () => {
     expect(written().apiKey).toBe('test-key-placeholder-not-a-credential');
   });
 });
+
+/**
+ * ISSUES.md #25.
+ *
+ * `init` printed a fixed success checklist regardless of what actually happened.
+ * Found by setting up a real GitHub repository end to end, where it reported
+ * "✅ Changes committed and pushed" and "✅ Repository secret" while having done
+ * neither — CI then failed at the deploy step with no credentials.
+ *
+ * Two independent causes, both fixed:
+ *   - `git add` throws on a .gitignore'd path, and one throw aborted the loop
+ *     before the workflows were staged.
+ *   - `gh variable` only exists from gh 2.21; on older gh the first call threw
+ *     and the secret after it was never reached.
+ *
+ * The tests below pin the reporting, because a wrong success message is worse
+ * than a failure: it stops the user looking.
+ */
+describe('gitCommit', () => {
+  const { execSync } = require('child_process');
+  let dir, cwd;
+
+  beforeEach(() => {
+    cwd = process.cwd();
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scry-commit-'));
+    process.chdir(dir);
+    execSync('git init -q . && git config user.email t@t.t && git config user.name t', { stdio: 'pipe' });
+    fs.writeFileSync('seed.txt', 'x');
+    execSync('git add -A && git commit -qm seed', { stdio: 'pipe' });
+    fs.mkdirSync('.github/workflows', { recursive: true });
+    fs.writeFileSync('.github/workflows/deploy-storybook.yml', 'name: deploy\n');
+    fs.writeFileSync('.github/workflows/deploy-pr-preview.yml', 'name: preview\n');
+  });
+
+  afterEach(() => {
+    process.chdir(cwd);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const silent = { debug() {}, info() {}, success() {}, error() {} };
+
+  // The exact shape that broke a real repository: a leftover ignore rule from
+  // the pre-0.4.0 workaround stopped the workflows being committed at all.
+  it('still commits the workflows when the config file is gitignored', () => {
+    fs.writeFileSync('.gitignore', '.storybook-deployer.json\n');
+    fs.writeFileSync('.storybook-deployer.json', '{}');
+
+    const result = init.gitCommit(silent);
+
+    expect(result.success).toBe(true);
+    const tracked = execSync('git ls-tree -r HEAD --name-only', { encoding: 'utf8' });
+    expect(tracked).toContain('.github/workflows/deploy-storybook.yml');
+    expect(tracked).toContain('.github/workflows/deploy-pr-preview.yml');
+    expect(tracked).not.toContain('.storybook-deployer.json');
+  });
+
+  it('reports failure rather than success when nothing could be staged', () => {
+    fs.rmSync('.github', { recursive: true, force: true });
+
+    expect(init.gitCommit(silent).success).toBe(false);
+  });
+});
