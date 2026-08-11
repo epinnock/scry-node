@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.4.1
+
+### Patch Changes
+
+- a6ce9b3: `scry init` no longer reports success for steps that failed.
+
+  Setting up a real repository end to end produced "✅ Changes committed and pushed"
+  and "✅ Repository secret (SCRY_API_KEY)" while having done neither. CI then failed
+  at the deploy step with no credentials, and the only clue was a warning printed
+  twenty lines above the success banner that contradicted it.
+
+  Three fixes:
+
+  - **`git add` no longer aborts the commit.** It throws on a `.gitignore`'d path, and
+    one throw skipped the workflow files entirely. A leftover `.storybook-deployer.json`
+    ignore rule from the pre-0.4.0 workaround was enough to prevent CI ever being set up.
+  - **`gh variable` is no longer assumed.** It arrived in gh 2.21; Ubuntu 22.04 ships
+    2.4.0. On older `gh` the first call threw and the secret after it was never reached,
+    leaving the repository with no variables _and_ no secret. There is now a capability
+    check and a `gh api` fallback.
+  - **The closing summary reports what happened**, including a distinct message for
+    "not attempted" when GitHub setup was skipped.
+
+- 92bc27e: The GitHub Actions workflow `scry init` generates now installs a browser.
+
+  Without it, screenshot capture failed for every story, no metadata archive was
+  produced, and **nothing was ever indexed** — while the deploy exited 0 and the
+  workflow went green. Proved on a real repository: CI passed and the project
+  recorded `storybook_uploaded` and nothing else.
+
+  The install command follows the project's package manager. `npx` is not safe to
+  assume: under pnpm it resolves against the pnpm-managed environment and reports
+  `playwright: not found` (exit 127) even with `--yes`.
+
+  **If you ran `scry init` before this release, add the step by hand** before your
+  deploy step, or re-run `init` — otherwise CI will keep passing without indexing
+  anything.
+
 ## 0.4.0
 
 ### Minor Changes
