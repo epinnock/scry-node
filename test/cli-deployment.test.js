@@ -69,6 +69,54 @@ describe('bin/cli runDeployment()', () => {
       expect(out).toContain('NOT being indexed');
     });
 
+    // ISSUES.md #24. The gap between "queued" and "uploaded but not queued":
+    // analysis was requested, produced nothing, and the command reported plain
+    // success. Nothing is ever indexed and CI stays green, so the first sign of
+    // trouble is a customer saying search is empty days later.
+    test('fails loudly when analysis was requested but produced no metadata', async () => {
+      mockDeps(jest.fn().mockResolvedValue({
+        zipUpload: { success: true },
+        coverageUpload: null,
+        metadataUpload: null,
+      }));
+      const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const previousExitCode = process.exitCode;
+
+      const { runDeployment } = require('../bin/cli.js');
+      await runDeployment({ ...baseArgs, withAnalysis: true });
+
+      const out = [...log.mock.calls, ...warn.mock.calls, ...err.mock.calls]
+        .map((c) => String(c[0])).join('\n');
+      expect(out).toContain('NOTHING WILL BE INDEXED');
+      // A green build here would mean search silently returns nothing.
+      expect(process.exitCode).toBe(1);
+
+      process.exitCode = previousExitCode;
+    });
+
+    // The quiet path stays quiet: no analysis asked for, none expected.
+    test('stays silent when analysis was never requested', async () => {
+      mockDeps(jest.fn().mockResolvedValue({
+        zipUpload: { success: true },
+        coverageUpload: null,
+        metadataUpload: null,
+      }));
+      const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const previousExitCode = process.exitCode;
+
+      const { runDeployment } = require('../bin/cli.js');
+      await runDeployment({ ...baseArgs, withAnalysis: false });
+
+      const out = [...log.mock.calls, ...err.mock.calls].map((c) => String(c[0])).join('\n');
+      expect(out).not.toContain('NOTHING WILL BE INDEXED');
+      expect(process.exitCode).not.toBe(1);
+
+      process.exitCode = previousExitCode;
+    });
+
     test('stays quiet about indexing when no metadata was uploaded', async () => {
       mockDeps(jest.fn().mockResolvedValue({
         zipUpload: { success: true },

@@ -147,6 +147,30 @@ async function runDeployment(argv) {
                 '\n⚠️  Metadata was uploaded but not queued for processing.\n' +
                 '   The Storybook is hosted, but its components are NOT being indexed.'
             );
+        } else if (argv.withAnalysis) {
+            // The gap between the two branches above, and the most damaging
+            // state of the three: analysis was asked for, produced nothing, and
+            // this command used to say "Upload successful" and stop. Nothing is
+            // ever indexed, no error is printed, and CI stays green — so the
+            // first sign of trouble is a customer reporting that search is empty
+            // days later (ISSUES.md #24).
+            //
+            // Exit non-zero. The Storybook is hosted, so "failure" overstates it
+            // slightly, but the job asked for was to make components searchable
+            // and that did not happen. A red build is the only signal that gets
+            // acted on.
+            process.exitCode = 1;
+            logger.error(
+                '\n❌ Analysis produced no metadata, so NOTHING WILL BE INDEXED.\n' +
+                '   The Storybook is hosted and browsable, but no component will be\n' +
+                '   searchable from this build.\n\n' +
+                '   You asked for --with-analysis and it did not complete. The cause is\n' +
+                '   in the coverage output above — commonly a missing Playwright browser\n' +
+                '   (run: npx playwright install chromium-headless-shell) or a TypeScript\n' +
+                '   resolution error in the analyzer.\n\n' +
+                '   Exiting non-zero deliberately: a green build here would mean search\n' +
+                '   silently returns nothing.'
+            );
         }
 
     } finally {
