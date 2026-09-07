@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@scrymore/scry-sbcov@0.4.0'
