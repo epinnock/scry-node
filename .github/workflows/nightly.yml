@@ -55,7 +55,7 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Test
-        run: pnpm test --runInBand
+        run: pnpm exec jest --runInBand
 
       - name: Prepare snapshot changeset
         # Stable release PRs consume all changesets. Seed a patch in this checkout
