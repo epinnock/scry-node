@@ -20,6 +20,7 @@ const { runInit } = require('../lib/init.js');
 const { runUpdateWorkflows } = require('../lib/update-workflows.js');
 const { runQueueImageUpload } = require('../lib/imageUpload.js');
 const { runLocalImageProcessing } = require('../lib/localImageProcessing.js');
+const { resolveBuildGitContext } = require('../lib/gitContext.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -108,6 +109,16 @@ async function runDeployment(argv) {
         // 2. Upload Storybook ZIP + coverage + metadata ZIP (if present).
         logger.info('2/3: Uploading to deployment service...');
         const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
+        // Which commit this build is of. `version` is a PR number, a branch, a
+        // tag or a short SHA depending on the CI event, so it identifies a
+        // deploy but never a commit — without this a search result cannot say
+        // which code it reflects (P13a).
+        const gitContext = resolveBuildGitContext();
+        if (gitContext.commitSha) {
+            logger.debug(`Build provenance: ${gitContext.commitSha}${gitContext.branch ? ` on ${gitContext.branch}` : ''}`);
+        } else {
+            logger.debug('No git context available; build will record no commit SHA');
+        }
         const uploadResult = await uploadBuild(
             apiClient,
             {
@@ -118,6 +129,7 @@ async function runDeployment(argv) {
                 zipPath: outPath,
                 coverageReport,
                 metadataZipPath,
+                gitContext,
             }
         );
         logger.success('✅ Archive uploaded.');
