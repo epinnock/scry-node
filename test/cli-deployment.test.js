@@ -3,7 +3,15 @@ const os = require('os');
 const path = require('path');
 
 describe('bin/cli runDeployment()', () => {
+  let previousExitCode;
+
+  beforeEach(() => {
+    previousExitCode = process.exitCode;
+  });
+
   afterEach(() => {
+    // Failure-path tests must not leave Jest itself with a failing exit code.
+    process.exitCode = previousExitCode;
     jest.resetModules();
     jest.restoreAllMocks();
   });
@@ -206,5 +214,6 @@ describe('bin/cli runDeployment()', () => {
       { project: 'p', version: 'v' },
       expect.objectContaining({ metadataZipPath: null })
     );
+    expect(process.exitCode).toBe(1);
   });
 });

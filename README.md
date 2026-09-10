@@ -986,6 +986,29 @@ npm install @scrymore/scry-deployer
 npm install @scrymore/scry-deployer@nightly
 ```
 
+### Snapshot channels
+
+Pushes to `stage` publish `@scrymore/scry-deployer@next`. The daily schedule
+publishes `@nightly` from `main`; manual runs select the channel from the chosen
+branch (`stage` → `next`, `main` → `nightly`). Other branches cannot publish.
+Stable releases from `main` still use the existing Changesets release PR and
+`latest` channel.
+
+```bash
+npm install --save-dev @scrymore/scry-deployer@next
+```
+
+The channel moves with each snapshot; pin the resolved prerelease version for a
+reproducible build. Snapshots use a temporary patch changeset even when no release
+changesets remain, and never commit generated versions or create Git tags. Runs
+are serialized per branch and verify the prerelease suffix before publishing.
+
+After merging this CI change, create `stage` from `main`. Both channels use the
+existing repository `NPM_TOKEN` secret via setup-node's `NODE_AUTH_TOKEN`; it must
+have npm publish permission for this package. No additional secret is required.
+If GitHub has disabled the scheduled workflow for inactivity, re-enable
+**Snapshot Release** in Actions. No npm dist-tag needs to be created manually.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 
 ---
