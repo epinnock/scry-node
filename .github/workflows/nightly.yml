@@ -1,24 +1,29 @@
-name: Nightly Release
+name: Snapshot Release
 
 on:
+  push:
+    branches: [stage]
+    paths-ignore: ['**/*.md', 'docs/**']
   schedule:
-    # Run every day at midnight UTC
     - cron: '0 0 * * *'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Snapshot tag (default: nightly)'
-        required: false
-        default: 'nightly'
+
+concurrency:
+  group: snapshot-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  nightly:
-    name: Publish Nightly
+  snapshot:
+    name: Publish snapshot
+    # Manual runs are limited to the two release branches. Schedules use main.
+    if: github.ref == 'refs/heads/stage' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    
+    env:
+      SNAPSHOT_TAG: ${{ github.ref == 'refs/heads/stage' && 'next' || 'nightly' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,81 +31,71 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Check for changes since last release
-        id: changes
+      - name: Check publishing credentials
         run: |
-          # Get the latest tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
-          if [ -z "$LAST_TAG" ]; then
-            echo "No previous tags found, will publish nightly"
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-          else
-            # Check for changes in source files since last tag
-            CHANGES=$(git diff --name-only $LAST_TAG HEAD -- lib/ bin/ package.json 2>/dev/null || echo "changed")
-            if [ -n "$CHANGES" ]; then
-              echo "Changes detected since $LAST_TAG:"
-              echo "$CHANGES"
-              echo "has_changes=true" >> $GITHUB_OUTPUT
-            else
-              echo "No changes since $LAST_TAG"
-              echo "has_changes=false" >> $GITHUB_OUTPUT
-            fi
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo '::error::Configure the repository NPM_TOKEN secret with publish access.'
+            exit 1
           fi
-
-      - name: Create snapshot version
-        if: steps.changes.outputs.has_changes == 'true'
-        run: |
-          TAG="${{ github.event.inputs.tag || 'nightly' }}"
-          echo "Creating snapshot version with tag: $TAG"
-          npx @changesets/cli version --snapshot $TAG
-
-      - name: Show version
-        if: steps.changes.outputs.has_changes == 'true'
-        run: |
-          echo "Package version:"
-          node -p "require('./package.json').version"
-
-      - name: Publish snapshot
-        if: steps.changes.outputs.has_changes == 'true'
-        run: |
-          TAG="${{ github.event.inputs.tag || 'nightly' }}"
-          echo "Publishing with tag: $TAG"
-          npx @changesets/cli publish --tag $TAG --no-git-tag
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Skip - No changes
-        if: steps.changes.outputs.has_changes == 'false'
-        run: echo "No changes since last release, skipping nightly build"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Test
+        run: pnpm test --runInBand
+
+      - name: Prepare snapshot changeset
+        # Stable release PRs consume all changesets. Seed a patch in this checkout
+        # so snapshots also work immediately after a release (or for CI changes).
+        # Neither this changeset nor the generated version is committed.
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const { name } = require('./package.json');
+          fs.writeFileSync('.changeset/ci-snapshot.md', `---\n"${name}": patch\n---\n\nCI snapshot.\n`);
+          NODE
+
+      - name: Create snapshot version
+        run: pnpm exec changeset version --snapshot "$SNAPSHOT_TAG"
+
+      - name: Verify snapshot channel and version
+        run: |
+          node <<'NODE'
+          const { version } = require('./package.json');
+          const tag = process.env.SNAPSHOT_TAG;
+          if (!['next', 'nightly'].includes(tag) || !version.includes(`-${tag}.`)) {
+            throw new Error(`Refusing to publish version ${version} to channel ${tag}`);
+          }
+          console.log(`Snapshot: ${version} (${tag})`);
+          NODE
+
+      - name: Publish snapshot
+        run: pnpm exec changeset publish --tag "$SNAPSHOT_TAG" --no-git-tag
+        env:
+          # setup-node's registry authentication reads NODE_AUTH_TOKEN.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
-        if: steps.changes.outputs.has_changes == 'true'
         run: |
-          TAG="${{ github.event.inputs.tag || 'nightly' }}"
           VERSION=$(node -p "require('./package.json').version")
-          echo "## 🌙 Nightly Release Published" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Package:** @scrymore/scry-deployer" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** $TAG" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Install with:" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "npm install @scrymore/scry-deployer@$TAG" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Snapshot published"
+            echo "Package: @scrymore/scry-deployer@$VERSION"
+            echo "Channel: $SNAPSHOT_TAG"
+            echo "Commit: $GITHUB_SHA"
+            echo "Install: npm install @scrymore/scry-deployer@$SNAPSHOT_TAG"
+          } >> "$GITHUB_STEP_SUMMARY"
