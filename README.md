@@ -114,11 +114,11 @@ npx storybook-deploy --dir ./storybook-static
 
 ## Configuration for Your API
 
-To use this package with the Storybook deployment API at `https://storybook-deployment-service.epinnock.workers.dev`, configure your `.storybook-deployer.json` file:
+To use this package with the Storybook deployment API at `https://upload.scrymore.com`, configure your `.storybook-deployer.json` file:
 
 ```json
 {
-  "apiUrl": "https://storybook-deployment-service.epinnock.workers.dev",
+  "apiUrl": "https://upload.scrymore.com",
   "dir": "./storybook-static",
   "project": "my-project",
   "version": "v1.0.0",
@@ -139,7 +139,7 @@ npx storybook-deploy \
   --version v1.0.0
 
 # Using environment variables
-export STORYBOOK_DEPLOYER_API_URL=https://storybook-deployment-service.epinnock.workers.dev
+export STORYBOOK_DEPLOYER_API_URL=https://upload.scrymore.com
 export STORYBOOK_DEPLOYER_PROJECT=my-project
 export STORYBOOK_DEPLOYER_VERSION=v1.0.0
 
@@ -313,7 +313,7 @@ npx storybook-deploy --api-url https://staging-api.service.com/v1
 ```bash
 npx storybook-deploy \
   --dir ./storybook-static \
-  --api-url https://storybook-deployment-service.epinnock.workers.dev \
+  --api-url https://upload.scrymore.com \
   --project my-storybook \
   --version v1.0.0 \
   --verbose
@@ -353,7 +353,7 @@ This tool is ideal for use in a GitHub Actions workflow. The API key should be s
 ```yaml
 - name: Deploy Storybook
   env:
-    STORYBOOK_DEPLOYER_API_URL: https://storybook-deployment-service.epinnock.workers.dev
+    STORYBOOK_DEPLOYER_API_URL: https://upload.scrymore.com
     STORYBOOK_DEPLOYER_PROJECT: ${{ github.event.repository.name }}
     STORYBOOK_DEPLOYER_VERSION: ${{ github.sha }}
   run: npx storybook-deploy --dir ./storybook-static
@@ -369,7 +369,7 @@ This tool is ideal for use in a GitHub Actions workflow. The API key should be s
 
 - name: Deploy Storybook with Analysis
   env:
-    STORYBOOK_DEPLOYER_API_URL: https://storybook-deployment-service.epinnock.workers.dev
+    STORYBOOK_DEPLOYER_API_URL: https://upload.scrymore.com
     STORYBOOK_DEPLOYER_PROJECT: ${{ github.event.repository.name }}
     STORYBOOK_DEPLOYER_VERSION: ${{ github.sha }}
   run: |
@@ -399,7 +399,7 @@ Before setting up PR preview deployments, ensure you have:
 
 1. **A Storybook project** with a build command (e.g., `npm run build-storybook`)
 2. **Access to repository settings** to configure GitHub Actions variables and secrets
-3. **Backend deployment service** running and accessible (e.g., `https://storybook-deployment-service.epinnock.workers.dev`)
+3. **Backend deployment service** running and accessible (e.g., `https://upload.scrymore.com`)
 4. **Project identifier** for your Storybook deployment
 
 #### Step-by-Step Setup
