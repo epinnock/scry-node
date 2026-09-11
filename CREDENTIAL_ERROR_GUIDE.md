@@ -16,7 +16,7 @@ Cloudflare R2 requires:
 - **Access Key ID**: Exactly **32 hexadecimal characters** (e.g., `a1b2c3d4e5f6789012345678901234ab`)
 - **Secret Access Key**: Variable length (typically 64+ characters)
 
-The error occurs because the backend service at [`https://storybook-deployment-service.epinnock.workers.dev`](https://storybook-deployment-service.epinnock.workers.dev) is using a 39-character access key instead of 32.
+The error occurs because the backend service at [`https://upload.scrymore.com`](https://upload.scrymore.com) is using a 39-character access key instead of 32.
 
 ## 🔍 Where the Error Occurs
 
@@ -158,11 +158,11 @@ If you've verified your credentials and still see the error:
 
 4. **Test with curl**
    ```bash
-   curl -X POST https://storybook-deployment-service.epinnock.workers.dev/presigned-url/test/v1/test.zip \
+   curl -X POST https://upload.scrymore.com/presigned-url/test/v1/test.zip \
      -H "Authorization: Bearer YOUR_API_KEY" \
      -H "Content-Type: application/json"
    ```
 
 ## 💡 Summary
 
-The error is in the **backend service**, not your client code. The backend worker at `https://storybook-deployment-service.epinnock.workers.dev` needs to have its R2 credentials updated to use a properly formatted 32-character hexadecimal access key ID.
+The error is in the **backend service**, not your client code. The backend worker at `https://upload.scrymore.com` needs to have its R2 credentials updated to use a properly formatted 32-character hexadecimal access key ID.

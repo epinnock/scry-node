@@ -1,5 +1,5 @@
 {
-  "apiUrl": "https://storybook-deployment-service.epinnock.workers.dev",
+  "apiUrl": "https://upload.scrymore.com",
   "apiKey": "",
   "dir": "./storybook-static",
   "project": "my-project",
