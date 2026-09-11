@@ -252,3 +252,112 @@ describe('lib/apiClient', () => {
     jest.useRealTimers();
   });
 });
+
+// P13a: without these on the request the build document records no commit, and
+// every row it indexes reports freshness as unknown for the rest of its life.
+describe('lib/apiClient build provenance', () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.restoreAllMocks();
+  });
+
+  test('uploadMetadataZip() sends commitSha and branch as query parameters', async () => {
+    jest.doMock('axios', () => ({
+      put: jest.fn(),
+      create: jest.fn(() => ({ defaults: { baseURL: 'https://api' } })),
+    }));
+
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpZip = path.join(os.tmpdir(), `scry-meta-git-${Date.now()}.zip`);
+    fs.writeFileSync(tmpZip, Buffer.from('zip'));
+
+    const { uploadMetadataZip } = require('../lib/apiClient.js');
+    const apiClient = {
+      defaults: { baseURL: 'https://api' },
+      post: jest.fn().mockResolvedValue({ status: 201, data: { queued: true, buildNumber: 3 } }),
+    };
+
+    await uploadMetadataZip(
+      apiClient,
+      { project: 'p', version: 'v' },
+      tmpZip,
+      { info: jest.fn(), success: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      { commitSha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', branch: 'feature/login' }
+    );
+
+    expect(apiClient.post.mock.calls[0][0]).toBe(
+      '/upload/p/v/metadata?commitSha=a1b2c3d4e5f60718293a4b5c6d7e8f9012345678&branch=feature%2Flogin'
+    );
+
+    fs.unlinkSync(tmpZip);
+  });
+
+  test('uploadMetadataZip() sends the bare URL when git context is unknown', async () => {
+    jest.doMock('axios', () => ({
+      put: jest.fn(),
+      create: jest.fn(() => ({ defaults: { baseURL: 'https://api' } })),
+    }));
+
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpZip = path.join(os.tmpdir(), `scry-meta-nogit-${Date.now()}.zip`);
+    fs.writeFileSync(tmpZip, Buffer.from('zip'));
+
+    const { uploadMetadataZip } = require('../lib/apiClient.js');
+    const apiClient = {
+      defaults: { baseURL: 'https://api' },
+      post: jest.fn().mockResolvedValue({ status: 201, data: { queued: true, buildNumber: 3 } }),
+    };
+
+    // Older callers pass four arguments; the request must be byte-identical to
+    // what the service has always received.
+    await uploadMetadataZip(apiClient, { project: 'p', version: 'v' }, tmpZip, {
+      info: jest.fn(),
+      success: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    });
+
+    expect(apiClient.post.mock.calls[0][0]).toBe('/upload/p/v/metadata');
+
+    fs.unlinkSync(tmpZip);
+  });
+
+  test('uploadBuild() forwards the git context it is given to the metadata upload', async () => {
+    jest.doMock('axios', () => ({
+      put: jest.fn().mockResolvedValue({ status: 200 }),
+      create: jest.fn(() => ({ defaults: { baseURL: 'https://api' } })),
+    }));
+
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpZip = path.join(os.tmpdir(), `scry-zip-git-${Date.now()}.zip`);
+    const tmpMeta = path.join(os.tmpdir(), `scry-meta-fwd-${Date.now()}.zip`);
+    fs.writeFileSync(tmpZip, Buffer.from('zip'));
+    fs.writeFileSync(tmpMeta, Buffer.from('meta'));
+
+    const { uploadBuild } = require('../lib/apiClient.js');
+    const apiClient = {
+      defaults: { baseURL: 'https://api' },
+      post: jest
+        .fn()
+        .mockResolvedValueOnce({ data: { url: 'https://upload.example.com/storybook' } })
+        .mockResolvedValueOnce({ status: 201, data: { queued: true, buildNumber: 5 } }),
+    };
+
+    await uploadBuild(
+      apiClient,
+      { project: 'p', version: 'v' },
+      { zipPath: tmpZip, metadataZipPath: tmpMeta, gitContext: { commitSha: 'abc123', branch: 'main' } }
+    );
+
+    expect(apiClient.post.mock.calls[1][0]).toBe('/upload/p/v/metadata?commitSha=abc123&branch=main');
+
+    fs.unlinkSync(tmpZip);
+    fs.unlinkSync(tmpMeta);
+  });
+});
