@@ -2,7 +2,31 @@
 
 Deploy your Storybook to the cloud with one command. ⚡
 
-## 🎯 Quick Start (5 seconds)
+## Set up with your AI assistant
+
+From your application's repository, install the Scry setup skill:
+
+```bash
+npx skills add epinnock/scry-node --skill scry-setup
+```
+
+The current installer requires Node.js 22.20 or newer. Choose your assistant
+(Claude Code, Codex, Cursor, or another compatible agent), then ask:
+**“Set up Scry for this project and connect my assistant to its components.”**
+
+The skill handles deployment configuration, GitHub Actions, component indexing,
+MCP connections, and optional Figma linking. You can also ask for MCP alone.
+Complete account sign-in in your browser and keep API keys in your environment
+or CI secret store.
+
+See the [setup guide](https://docs.scrymore.com/guide/skill) for installation
+options, or inspect the [skill instructions](skills/scry-setup/SKILL.md).
+
+## Set up directly with the CLI
+
+`init` writes configuration and workflows, configures GitHub secrets, then
+commits and pushes. For local preparation before publishing, use the skill or
+the manual deployment path below. `--skip-gh-setup` still commits and pushes.
 
 ### 1. Get your credentials
 Visit the [Scry Dashboard](https://dashboard.scrymore.com) and:
@@ -100,8 +124,8 @@ yarn add github:epinnock/scry-node --dev
 After installation, you can run commands using:
 
 ```bash
-# Using the storybook-deployer binary
-npx storybook-deployer init --projectId xxx --apiKey yyy
+# Using the scry-deployer binary
+npm exec -- scry-deployer init --projectId xxx --apiKey yyy
 
 # Using the scry alias
 npx scry init --projectId xxx --apiKey yyy
