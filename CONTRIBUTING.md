@@ -6,7 +6,7 @@ Thank you for your interest in contributing! This document outlines the process 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/epinnock/scry-node.git
+   git clone https://github.com/scryorg/scry-node.git
    cd scry-node
    ```
 

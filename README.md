@@ -78,7 +78,7 @@ This deploys your Storybook immediately without setting up GitHub Actions.
 npx @scrymore/scry-deployer init --projectId xxx --apiKey yyy
 
 # From GitHub (latest from main branch)
-npx github:epinnock/scry-node init --projectId xxx --apiKey yyy
+npx github:scryorg/scry-node init --projectId xxx --apiKey yyy
 ```
 
 ### Installing as a Dependency
@@ -90,11 +90,11 @@ If you prefer to install it as a development dependency:
 npm install @scrymore/scry-deployer --save-dev
 
 # From GitHub
-npm install github:epinnock/scry-node --save-dev
+npm install github:scryorg/scry-node --save-dev
 # or
-pnpm add github:epinnock/scry-node -D
+pnpm add github:scryorg/scry-node -D
 # or
-yarn add github:epinnock/scry-node --dev
+yarn add github:scryorg/scry-node --dev
 ```
 
 After installation, you can run commands using:
@@ -181,7 +181,7 @@ The CLI is configured through a combination of command-line options and environm
 |----------------|---------------------------------------|--------------------------------------------------------------|----------|--------------------------------------|
 | `--dir`        | `STORYBOOK_DEPLOYER_DIR`              | Path to the built Storybook directory (e.g., `storybook-static`). | Yes      | -                                    |
 | `--api-key`    | `STORYBOOK_DEPLOYER_API_KEY`          | The API key for the deployment service.                        | No       | -                                    |
-| `--api-url`    | `STORYBOOK_DEPLOYER_API_URL`          | Base URL for the deployment service API.                       | No       | `https://api.default-service.com/v1`  |
+| `--api-url`    | `STORYBOOK_DEPLOYER_API_URL`          | Base URL for the deployment service API.                       | No       | `https://storybook-deployment-service.epinnock.workers.dev` |
 | `--project`    | `STORYBOOK_DEPLOYER_PROJECT`          | The project name/identifier.                                   | No       | `main`                               |
 | `--version`    | `STORYBOOK_DEPLOYER_VERSION`          | The version identifier for the deployment.                     | No       | `latest`                             |
 | `--with-analysis` | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | Enable Storybook analysis (story crawling + screenshots). Enabled by default in generated workflows. | No       | `false`                              |
@@ -426,7 +426,7 @@ If you're installing from GitHub, the workflow file is already included.
 | Variable Name | Value | Example |
 |--------------|-------|---------|
 | `SCRY_PROJECT_ID` | Your project identifier | `my-storybook` or `company-design-system` |
-| `SCRY_API_URL` | Backend API endpoint for uploads | `https://api.scrymore.com` |
+| `SCRY_API_URL` | Backend API endpoint for uploads (the upload service) | `https://storybook-deployment-service.epinnock.workers.dev` |
 | `SCRY_VIEW_URL` | Base URL where users view deployed Storybooks | `https://view.scrymore.com` |
 
 **Note:** The `SCRY_VIEW_URL` is where users will access your deployed Storybook (e.g., `https://view.scrymore.com/{project}/pr-{number}/`). This is separate from `SCRY_API_URL`, which is the backend API endpoint used for uploads.
@@ -1016,6 +1016,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 ## 🆘 Support
 
 Need help?
-- 📖 [Documentation](https://github.com/epinnock/scry-node)
-- 🐛 [Report an issue](https://github.com/epinnock/scry-node/issues)
-- 💬 [Discussions](https://github.com/epinnock/scry-node/discussions)
+- 📖 [Documentation](https://github.com/scryorg/scry-node)
+- 🐛 [Report an issue](https://github.com/scryorg/scry-node/issues)
+- 💬 [Discussions](https://github.com/scryorg/scry-node/discussions)
