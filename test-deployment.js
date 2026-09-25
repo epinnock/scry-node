@@ -41,7 +41,7 @@ console.log('📝 Step 2: Creating test config file...');
 const testConfigPath = path.join(__dirname, '.storybook-deployer-test.json');
 
 const testConfig = {
-  apiUrl: process.env.STORYBOOK_DEPLOYER_API_URL || "https://storybook-deployment-service.epinnock.workers.dev",
+  apiUrl: process.env.STORYBOOK_DEPLOYER_API_URL || "https://upload.scrymore.com",
   apiKey: process.env.STORYBOOK_DEPLOYER_API_KEY || "",
   dir: "./test-storybook-static",
   project: "test-project",

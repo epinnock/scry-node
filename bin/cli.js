@@ -435,7 +435,7 @@ async function main() {
                     .option('api-url', {
                         describe: 'Scry API URL',
                         type: 'string',
-                        default: 'https://storybook-deployment-service.epinnock.workers.dev',
+                        default: 'https://upload.scrymore.com',
                         alias: 'apiUrl'
                     })
                     .option('skip-gh-setup', {
