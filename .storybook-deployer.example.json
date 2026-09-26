@@ -5,7 +5,6 @@
   "project": "my-project",
   "version": "v1.0.0",
   "verbose": false,
-  "withAnalysis": false,
   "coverage": true,
   "coverageReport": null,
   "coverageFailOnThreshold": false,

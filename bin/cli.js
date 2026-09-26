@@ -21,6 +21,9 @@ const { runUpdateWorkflows } = require('../lib/update-workflows.js');
 const { runQueueImageUpload } = require('../lib/imageUpload.js');
 const { runLocalImageProcessing } = require('../lib/localImageProcessing.js');
 const { resolveBuildGitContext } = require('../lib/gitContext.js');
+const { countMetadataEntries, readSbcovManifest, droppedReasons } = require('../lib/metadataArchive.js');
+const { checkForNewerVersion } = require('../lib/versionCheck.js');
+const { version: DEPLOYER_VERSION } = require('../package.json');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -83,11 +86,58 @@ async function runAnalysis(argv) {
     }
 }
 
+/**
+ * Decide whether this deploy runs analysis (screenshots + metadata for search).
+ *
+ * On by default since 0.7.0: an unset flag used to mean "off", and a workflow
+ * that forgot --with-analysis uploaded, printed success and indexed nothing
+ * (ISSUES.md #50). Opting out is explicit, and the caller says so in the log.
+ *
+ * @param {any} argv
+ * @returns {{enabled:boolean, optOut:string|null}}
+ */
+function resolveAnalysis(argv) {
+    if (argv.analysis === false) {
+        return { enabled: false, optOut: '--no-analysis' };
+    }
+    if (argv.withAnalysis === false) {
+        return { enabled: false, optOut: 'withAnalysis is false in .storybook-deployer.json or SCRY_WITH_ANALYSIS' };
+    }
+    if (argv.withAnalysis === true || argv.analysis === true) {
+        return { enabled: true, optOut: null };
+    }
+    // Analysis runs inside the coverage tool, so --no-coverage without an
+    // explicit analysis flag is an opt-out of both. With --with-analysis it is
+    // not, and ends red below (analysis asked for, nothing produced).
+    if (argv.coverage === false) {
+        return { enabled: false, optOut: '--no-coverage (analysis runs inside coverage)' };
+    }
+    // A supplied report skips the coverage run, and with it the capture.
+    if (argv.coverageReport) {
+        return { enabled: false, optOut: '--coverage-report (a supplied report has no screenshots)' };
+    }
+    return { enabled: true, optOut: null };
+}
+
+/**
+ * Stories the coverage report says exist, and the first capture error, for
+ * the "captured 0 of N" line. Both optional: the report shape is sbcov's.
+ */
+function describeCapture(report) {
+    const total = report?.summary?.totalStories ?? report?.execution?.summary?.total ?? null;
+    const f = report?.execution?.failures?.[0];
+    const firstError = f ? `${f.storyId || f.storyName || 'a story'}: ${String(f.message || f.failureType || '').split('\n')[0]}` : null;
+    return { total: typeof total === 'number' ? total : null, firstError };
+}
+
 async function runDeployment(argv) {
     const logger = createLogger(argv);
     logger.info('🚀 Starting deployment...');
     // Credentials masked: this line is also a Sentry breadcrumb.
     logger.debug(`Received arguments: ${JSON.stringify(redactArgv(argv))}`);
+
+    const analysis = resolveAnalysis(argv);
+    argv = { ...argv, withAnalysis: analysis.enabled };
 
     const outPath = path.join(os.tmpdir(), `storybook-deployment-${Date.now()}.zip`);
     let metadataZipPath = null;
@@ -96,10 +146,55 @@ async function runDeployment(argv) {
         const coverage = await resolveCoverage(argv, logger);
         const coverageReport = coverage.coverageReport;
         const coverageSummary = coverage.coverageSummary;
+        const sbcovFailure = coverage.sbcovFailure || null;
         metadataZipPath = coverage.metadataZipPath;
 
         if (argv.withAnalysis) {
             logger.info('Running deployment with analysis...');
+        }
+
+        // Count what the archive holds before sending it. An archive whose
+        // metadata.json is [] is what sbcov writes when every story failed
+        // after the browser launched; queuing it produced a build marked
+        // `completed` with nothing in it, and a green run (ISSUES.md #50).
+        // Hosting still goes ahead (the preview link stays useful); the
+        // archive is not sent and the run ends red below.
+        let metadataToSend = metadataZipPath;
+        let emptyArchive = null;
+        let dropped = null;
+        if (coverage.maxDroppedUnsupported) {
+            logger.warn(
+                '⚠️  The installed scry-sbcov does not support --max-dropped, so stories that fail to\n' +
+                '   capture are not counted by it. Upgrade @scrymore/scry-sbcov to 0.5.2 or later.'
+            );
+        }
+        if (metadataZipPath) {
+            // sbcov 0.5.2+ lists every story it could not capture in the archive.
+            // Read it whatever sbcov's exit code: a sbcov that ignored
+            // --max-dropped still names its drops, and the allowance is applied here.
+            const { manifest, error: manifestError } = readSbcovManifest(metadataZipPath);
+            if (manifestError) {
+                logger.warn(`⚠️  ${manifestError}; dropped stories cannot be counted for this build.`);
+            } else if (manifest) {
+                const allowed = coverage.effectiveMaxDropped ?? 0;
+                const n = manifest.dropped.length;
+                const reasons = n ? ` (${droppedReasons(manifest.dropped)})` : '';
+                logger.info(`scry-sbcov: ${manifest.captured ?? '?'}/${manifest.declared ?? '?'} stories captured, ${n} not captured${reasons}.`);
+                dropped = { n, allowed, reasons, declared: manifest.declared, captured: manifest.captured };
+            }
+        }
+        if (metadataZipPath) {
+            const counted = countMetadataEntries(metadataZipPath);
+            if (counted.count === 0) {
+                emptyArchive = { ...describeCapture(coverageReport), note: counted.error };
+                metadataToSend = null;
+            } else if (counted.count === null) {
+                // Could not read it. Send it anyway (the service decides) but
+                // say so: this is not a count of zero.
+                logger.warn(`⚠️  Could not count the stories in the analysis archive (${counted.error}); uploading it anyway.`);
+            } else {
+                logger.info(`Analysis archive holds ${counted.count} captured ${counted.count === 1 ? 'story' : 'stories'}.`);
+            }
         }
 
         // 1. Archive only the static Storybook files.
@@ -130,7 +225,7 @@ async function runDeployment(argv) {
             {
                 zipPath: outPath,
                 coverageReport,
-                metadataZipPath,
+                metadataZipPath: metadataToSend,
                 gitContext,
             }
         );
@@ -148,44 +243,7 @@ async function runDeployment(argv) {
         logger.success('\n✅ Upload complete.');
         logUploadLinks(argv, coverageSummary, uploadResult, logger);
 
-        if (uploadResult?.metadataUpload?.queued) {
-            logger.info(
-                '\n⏳ Indexing has been queued, not finished.\n' +
-                '   This command cannot confirm it succeeded. Components will not be\n' +
-                '   searchable until processing completes, and a failed build reports\n' +
-                '   nothing here. Before relying on search, confirm the build shows\n' +
-                "   processingStatus 'completed' rather than 'failed'."
-            );
-        } else if (uploadResult?.metadataUpload) {
-            logger.warn(
-                '\n⚠️  Metadata was uploaded but not queued for processing.\n' +
-                '   The Storybook is hosted, but its components are NOT being indexed.'
-            );
-        } else if (argv.withAnalysis) {
-            // The gap between the two branches above, and the most damaging
-            // state of the three: analysis was asked for, produced nothing, and
-            // this command used to say "Upload successful" and stop. Nothing is
-            // ever indexed, no error is printed, and CI stays green — so the
-            // first sign of trouble is a customer reporting that search is empty
-            // days later (ISSUES.md #24).
-            //
-            // Exit non-zero. The Storybook is hosted, so "failure" overstates it
-            // slightly, but the job asked for was to make components searchable
-            // and that did not happen. A red build is the only signal that gets
-            // acted on.
-            process.exitCode = 1;
-            logger.error(
-                '\n❌ Analysis produced no metadata, so NOTHING WILL BE INDEXED.\n' +
-                '   The Storybook is hosted and browsable, but no component will be\n' +
-                '   searchable from this build.\n\n' +
-                '   You asked for --with-analysis and it did not complete. The cause is\n' +
-                '   in the coverage output above — commonly a missing Playwright browser\n' +
-                '   (run: npx playwright install chromium-headless-shell) or a TypeScript\n' +
-                '   resolution error in the analyzer.\n\n' +
-                '   Exiting non-zero deliberately: a green build here would mean search\n' +
-                '   silently returns nothing.'
-            );
-        }
+        reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, dropped, logger });
 
     } finally {
         // 4. Clean up the local archive
@@ -198,6 +256,122 @@ async function runDeployment(argv) {
             logger.info(`🧹 Cleaned up temporary file: ${metadataZipPath}`);
         }
     }
+}
+
+const HOSTED_NOT_SEARCHABLE =
+    '   The Storybook is hosted and browsable, but no component will be\n' +
+    '   searchable from this build.';
+
+/**
+ * Say what happened to indexing, and set the exit code from it.
+ *
+ * The rule (ISSUES.md #24, #50): a deploy that was asked to index and will
+ * index nothing ends with exit code 1. The Storybook is hosted either way.
+ */
+function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, dropped = null, logger }) {
+    const metadataUpload = uploadResult?.metadataUpload || null;
+
+    if (!argv.withAnalysis) {
+        logger.info(`\nℹ️  Analysis skipped (${analysis.optOut || 'not requested'}): this build is hosted but NOT searchable.`);
+        if (sbcovFailure) {
+            // Coverage is optional here; the report is what failed.
+            logger.warn(`⚠️  Coverage report not produced: ${sbcovFailure.reason}.`);
+        }
+        return;
+    }
+
+    if (emptyArchive) {
+        // Checked first: the archive was not sent, so whatever the upload
+        // result says about metadata is not about this build's stories.
+        process.exitCode = 1;
+        const of = emptyArchive.total !== null ? ` of ${emptyArchive.total}` : '';
+        logger.error(
+            `\n❌ Analysis captured 0${of} stories, so NOTHING WILL BE INDEXED.\n` +
+            (emptyArchive.firstError ? `   First capture error: ${emptyArchive.firstError}\n` : '') +
+            (emptyArchive.note ? `   The archive: ${emptyArchive.note}.\n` : '') +
+            (sbcovFailure ? `   ${sbcovFailure.reason}.\n` : '') +
+            '   The empty archive was not uploaded and no build was queued.\n' +
+            HOSTED_NOT_SEARCHABLE
+        );
+        return;
+    }
+
+    if (metadataUpload && metadataUpload.success === false) {
+        // apiClient turns a rejected upload into {success:false}; the old
+        // check tested only that the object existed, printed "uploaded but
+        // not queued" and exited 0.
+        process.exitCode = 1;
+        logger.error(
+            `\n❌ The metadata upload failed (${metadataUpload.error || 'no reason given'}), so NOTHING WILL BE INDEXED.\n` +
+            HOSTED_NOT_SEARCHABLE
+        );
+        return;
+    }
+
+    if (metadataUpload?.queued) {
+        logger.info(
+            '\n⏳ Indexing has been queued, not finished.\n' +
+            '   This command cannot confirm it succeeded. Components will not be\n' +
+            '   searchable until processing completes, and a failed build reports\n' +
+            '   nothing here. Before relying on search, confirm the build shows\n' +
+            "   processingStatus 'completed' rather than 'failed'."
+        );
+        const droppedLine = dropped && dropped.n
+            ? `   ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}; see sbcov-manifest.json in the archive.\n`
+            : '';
+        if (sbcovFailure) {
+            // The contract with scry-sbcov (#51): exit 3 = stories were dropped
+            // above --max-dropped, and the archive of the ones that captured
+            // was written. Those are queued above; the run still ends red.
+            process.exitCode = 1;
+            logger.error(
+                `\n❌ ${sbcovFailure.reason}. The stories that were captured are queued for\n` +
+                '   indexing, but this build is incomplete: some components will be\n' +
+                '   missing from search. See the scry-sbcov output above.\n' +
+                droppedLine
+            );
+        } else if (dropped && dropped.n > dropped.allowed) {
+            // sbcov exited 0 but its manifest lists more drops than allowed: an
+            // sbcov that ignored --max-dropped, or one run without it. The
+            // allowance is enforced here too, so any dropped story still ends
+            // the deploy red (after the rest were queued) unless --max-dropped
+            // says otherwise.
+            process.exitCode = 1;
+            logger.error(
+                `\n❌ ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}, more than\n` +
+                `   --max-dropped ${dropped.allowed} allows. The ${dropped.captured ?? 'other'} captured stories are queued; the rest\n` +
+                '   will not be searchable. See sbcov-manifest.json in the archive, or raise\n' +
+                '   --max-dropped (SCRY_MAX_DROPPED) to accept them.'
+            );
+        }
+        return;
+    }
+
+    if (metadataUpload) {
+        process.exitCode = 1;
+        logger.error(
+            '\n❌ Metadata was uploaded but not queued for processing, so NOTHING WILL BE INDEXED.\n' +
+            HOSTED_NOT_SEARCHABLE
+        );
+        return;
+    }
+
+    process.exitCode = 1;
+
+    // The gap between the branches above, and the most damaging state:
+    // analysis was asked for, produced nothing, and this command used to say
+    // "Upload successful" and stop (ISSUES.md #24).
+    logger.error(
+        '\n❌ Analysis produced no metadata, so NOTHING WILL BE INDEXED.\n' +
+        HOSTED_NOT_SEARCHABLE + '\n\n' +
+        (sbcovFailure
+            ? `   Cause: ${sbcovFailure.reason}. See the scry-sbcov output above.\n\n`
+            : '   The cause is in the coverage output above — commonly a missing Playwright\n' +
+              "   browser (install it with the deployer's own Playwright; see the README's\n" +
+              '   CI setup) or a TypeScript resolution error in the analyzer.\n\n') +
+        '   Exiting non-zero deliberately: a green build here would mean search\n' +
+        '   silently returns nothing. Pass --no-analysis to host without indexing.'
+    );
 }
 
 async function handleError(error, argv) {
@@ -281,9 +455,30 @@ async function main() {
                         type: 'boolean',
                         default: false,
                     })
+                    .option('capture-mode', {
+                        describe: 'Screenshot framing forwarded to scry-sbcov: root or viewport (unset: sbcov default)',
+                        type: 'string',
+                        choices: ['root', 'viewport'],
+                    })
+                    .option('capture-scale', {
+                        describe: 'Screenshot device scale factor forwarded to scry-sbcov, 0 < n <= 4 (unset: sbcov default)',
+                        type: 'string',
+                    })
+                    .option('capture-viewport', {
+                        describe: 'Browser viewport WIDTHxHEIGHT forwarded to scry-sbcov (unset: sbcov default)',
+                        type: 'string',
+                    })
                     .option('with-analysis', {
-                        describe: 'Include Storybook analysis (screenshots, metadata)',
+                        describe: 'Capture screenshots and metadata so components are searchable (the default since 0.7.0)',
                         type: 'boolean',
+                    })
+                    .option('analysis', {
+                        describe: 'Pass --no-analysis to host the Storybook without indexing it (nothing will be searchable)',
+                        type: 'boolean',
+                    })
+                    .option('max-dropped', {
+                        describe: 'End red (after uploading the rest) when more than this many stories fail to capture. Default 0: any dropped story ends the deploy red. Forwarded to scry-sbcov',
+                        type: 'string',
                     })
                     .option('storybook-url', {
                         describe: 'URL of the Storybook for screenshot capture',
@@ -317,6 +512,9 @@ async function main() {
                 if (!fs.lstatSync(config.dir).isDirectory()) {
                     throw new Error(`Path is not a directory: ${config.dir}`);
                 }
+
+                // Advisory, bounded to 2 s, never fails the deploy.
+                await checkForNewerVersion({ currentVersion: DEPLOYER_VERSION, logger: createLogger(config) });
 
                 await runDeployment(config);
             })
@@ -389,6 +587,23 @@ async function main() {
                         default: false,
                         alias: 'coverageExecute'
                     })
+                    .option('capture-mode', {
+                        describe: 'Screenshot framing forwarded to scry-sbcov: root or viewport (unset: sbcov default)',
+                        type: 'string',
+                        choices: ['root', 'viewport'],
+                    })
+                    .option('capture-scale', {
+                        describe: 'Screenshot device scale factor forwarded to scry-sbcov, 0 < n <= 4 (unset: sbcov default)',
+                        type: 'string',
+                    })
+                    .option('capture-viewport', {
+                        describe: 'Browser viewport WIDTHxHEIGHT forwarded to scry-sbcov (unset: sbcov default)',
+                        type: 'string',
+                    })
+                    .option('max-dropped', {
+                        describe: 'Forwarded to scry-sbcov: fail when more than this many stories fail to capture',
+                        type: 'string',
+                    })
                     .option('output', {
                         describe: 'Where to write the JSON coverage report',
                         type: 'string',
@@ -402,6 +617,8 @@ async function main() {
             }, async (argv) => {
                 const logger = createLogger(argv);
 
+                // Capture settings: CLI flag > env > .storybook-deployer.json; unset = sbcov decides.
+                const { captureMode, captureScale, captureViewport, maxDropped } = loadConfig(argv);
                 const result = await runCoverageAnalysis({
                     storybookDir: argv.dir,
                     baseBranch: argv.coverageBase || 'main',
@@ -409,9 +626,17 @@ async function main() {
                     execute: Boolean(argv.coverageExecute),
                     outputPath: argv.output,
                     keepReport: true,
+                    captureMode,
+                    captureScale,
+                    captureViewport,
+                    maxDropped,
                 });
                 const report = result.report;
 
+                if (result.sbcovFailure) {
+                    logger.error(`Coverage: ${result.sbcovFailure.reason}${report ? ` (report written to ${argv.output})` : ''}`);
+                    process.exit(1);
+                }
                 if (!report) {
                     logger.error('Coverage: no report generated (tool failed or returned null)');
                     process.exit(1);
@@ -473,6 +698,27 @@ async function main() {
                 };
 
                 await runInit(initConfig);
+            })
+            .command('update-workflows', 'Regenerate the Scry GitHub Actions workflows in .github/workflows from this version\'s templates (no API key needed)', (yargs) => {
+                return yargs
+                    .option('commit', {
+                        describe: 'git add and commit the regenerated workflow files',
+                        type: 'boolean',
+                        default: false,
+                    })
+                    .option('commit-message', {
+                        describe: 'Commit message used with --commit',
+                        type: 'string',
+                        default: 'chore: update Scry workflows',
+                        alias: 'commitMessage',
+                    })
+                    .option('verbose', {
+                        describe: 'Enable verbose logging',
+                        type: 'boolean',
+                        default: false,
+                    });
+            }, async (argv) => {
+                await runUpdateWorkflows(argv);
             })
             .command('upload-images', 'Upload a folder of images for search indexing', (yargs) => {
                 return yargs
@@ -589,12 +835,15 @@ async function resolveCoverage(argv, logger) {
     const enabled = argv.coverage !== false;
     if (!enabled) {
         logger.info('Coverage: disabled (--no-coverage)');
-        return { coverageReport: null, coverageSummary: null, metadataZipPath: null };
+        return { coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null, effectiveMaxDropped: null, maxDroppedUnsupported: false };
     }
 
     try {
         let report = null;
         let metadataZipPath = null;
+        let sbcovFailure = null;
+        let effectiveMaxDropped = null;
+        let maxDroppedUnsupported = false;
 
         if (argv.coverageReport) {
             logger.info(`Coverage: using existing report at ${argv.coverageReport}`);
@@ -612,9 +861,16 @@ async function resolveCoverage(argv, logger) {
                 execute: Boolean(argv.coverageExecute) || needsScreenshots,
                 screenshots: needsScreenshots,
                 outputZipPath,
+                captureMode: argv.captureMode,
+                captureScale: argv.captureScale,
+                captureViewport: argv.captureViewport,
+                maxDropped: argv.maxDropped,
             });
             report = result.report;
             metadataZipPath = result.metadataZipPath;
+            sbcovFailure = result.sbcovFailure || null;
+            effectiveMaxDropped = result.effectiveMaxDropped ?? null;
+            maxDroppedUnsupported = Boolean(result.maxDroppedUnsupported);
         }
 
         const summary = extractCoverageSummary(report);
@@ -625,7 +881,7 @@ async function resolveCoverage(argv, logger) {
             logger.info('Coverage: no report generated (tool failed or report shape unexpected)');
         }
 
-        return { coverageReport: report, coverageSummary: summary, metadataZipPath };
+        return { coverageReport: report, coverageSummary: summary, metadataZipPath, sbcovFailure, effectiveMaxDropped, maxDroppedUnsupported };
     } catch (err) {
         logger.error(`Coverage: failed (${err.message})`);
         throw err;
@@ -662,7 +918,7 @@ function buildDeployResult(argv, coverageSummary, uploadResult) {
 function logUploadLinks(argv, coverageSummary, uploadResult, logger) {
     const deployResult = buildDeployResult(argv, coverageSummary, uploadResult);
 
-    logger.success('\n✅ Upload successful!\n');
+    logger.success('\n✅ Storybook hosted.\n');
     logger.info(`📖 Storybook: ${deployResult.viewUrl}`);
     if (deployResult.coverageUrl) {
         logger.info(`📊 Coverage:  ${deployResult.coverageUrl}`);
@@ -682,6 +938,8 @@ module.exports = {
     runDeployment,
     runAnalysis,
     resolveCoverage,
+    resolveAnalysis,
+    reportIndexingOutcome,
     buildDeployResult,
     logUploadLinks,
 };
