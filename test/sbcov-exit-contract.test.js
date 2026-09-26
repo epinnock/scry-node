@@ -66,6 +66,15 @@ describe('sbcov exit-code contract (end to end)', () => {
     expect(r.code).toBe(0);
   });
 
+  // Review finding 12: a user-set value is not sent to an sbcov that would reject it.
+  test('a user --max-dropped with an sbcov too old for it is not sent, and the log says so', async () => {
+    const r = await runDeployerCli({ args: ['--max-dropped', '3'], sbcovMode: 'ok', env: { FAKE_SBCOV_OLD: '1' } });
+    expect(r.sbcovArgs).not.toContain('--max-dropped');
+    expect(r.out).toContain('does not support --max-dropped');
+    expect(r.sentMetadata).toBe(true);
+    expect(r.code).toBe(0);
+  });
+
   test('exit 2 with no archive: nothing queued, the run ends red naming the broken capture config', async () => {
     const r = await runDeployerCli({ sbcovMode: 'exit2' });
 
