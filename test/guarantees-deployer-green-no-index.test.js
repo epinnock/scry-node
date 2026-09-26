@@ -45,7 +45,7 @@ describe('deployer-green-no-index guarantees', () => {
     test.each(cases)('%s (%s)', (gen, pm) => {
       const yml = templates[gen]('p', 'https://api', pm, 'build-storybook');
 
-      const install = yml.indexOf('npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0');
+      const install = yml.indexOf('npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0');
       const browser = yml.indexOf('npx --no-install playwright install --with-deps chromium-headless-shell');
       const deploy = yml.indexOf('"$RUNNER_TEMP/scry/node_modules/.bin/scry-deployer" \\');
 
@@ -85,6 +85,17 @@ describe('deployer-green-no-index guarantees', () => {
       expect(r.sentMetadata).toBe(true);
       expect(r.out).toContain('Analysis archive holds 3 captured stories.');
       expect(r.out).toContain('queued, not finished');
+      expect(r.code).toBe(0);
+    });
+
+    // Review finding 1: the example config shipped "withAnalysis": false, so
+    // copying it opted out without anyone choosing to.
+    test('a project that copied .storybook-deployer.example.json still indexes', async () => {
+      const example = require('fs').readFileSync(require('path').join(__dirname, '..', '.storybook-deployer.example.json'), 'utf8');
+      const r = await runDeployerCli({ sbcovMode: 'ok', configFile: example });
+
+      expect(r.sbcovArgs).toEqual(expect.arrayContaining(['--screenshots']));
+      expect(r.sentMetadata).toBe(true);
       expect(r.code).toBe(0);
     });
 

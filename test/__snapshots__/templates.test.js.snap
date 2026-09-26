@@ -47,12 +47,16 @@ jobs:
       - name: Install the Scry deployer
         id: scry
         # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
+        # --ignore-scripts: nothing in its tree needs an install script, and none runs next to the checkout's token.
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/scry"
-          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+          npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
           cd "$RUNNER_TEMP/scry"
           echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "playwright=$(npx --no-install playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          PW="$(npx --no-install playwright --version | awk '{print $2}')"
+          [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found in $RUNNER_TEMP/scry"; exit 1; }
+          echo "playwright=$PW" >> "$GITHUB_OUTPUT"
 
       - name: Cache the deployer's Playwright browser
         uses: actions/cache@v4
@@ -146,12 +150,16 @@ jobs:
       - name: Install the Scry deployer
         id: scry
         # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
+        # --ignore-scripts: nothing in its tree needs an install script, and none runs next to the checkout's token.
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/scry"
-          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+          npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
           cd "$RUNNER_TEMP/scry"
           echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "playwright=$(npx --no-install playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          PW="$(npx --no-install playwright --version | awk '{print $2}')"
+          [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found in $RUNNER_TEMP/scry"; exit 1; }
+          echo "playwright=$PW" >> "$GITHUB_OUTPUT"
 
       - name: Cache the deployer's Playwright browser
         uses: actions/cache@v4
@@ -241,12 +249,16 @@ jobs:
       - name: Install the Scry deployer
         id: scry
         # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
+        # --ignore-scripts: nothing in its tree needs an install script, and none runs next to the checkout's token.
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/scry"
-          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+          npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
           cd "$RUNNER_TEMP/scry"
           echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "playwright=$(npx --no-install playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          PW="$(npx --no-install playwright --version | awk '{print $2}')"
+          [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found in $RUNNER_TEMP/scry"; exit 1; }
+          echo "playwright=$PW" >> "$GITHUB_OUTPUT"
 
       - name: Cache the deployer's Playwright browser
         uses: actions/cache@v4
@@ -325,12 +337,16 @@ jobs:
       - name: Install the Scry deployer
         id: scry
         # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
+        # --ignore-scripts: nothing in its tree needs an install script, and none runs next to the checkout's token.
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/scry"
-          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+          npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
           cd "$RUNNER_TEMP/scry"
           echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "playwright=$(npx --no-install playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          PW="$(npx --no-install playwright --version | awk '{print $2}')"
+          [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found in $RUNNER_TEMP/scry"; exit 1; }
+          echo "playwright=$PW" >> "$GITHUB_OUTPUT"
 
       - name: Cache the deployer's Playwright browser
         uses: actions/cache@v4
@@ -404,12 +420,16 @@ jobs:
       - name: Install the Scry deployer
         id: scry
         # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
+        # --ignore-scripts: nothing in its tree needs an install script, and none runs next to the checkout's token.
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/scry"
-          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+          npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
           cd "$RUNNER_TEMP/scry"
           echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "playwright=$(npx --no-install playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          PW="$(npx --no-install playwright --version | awk '{print $2}')"
+          [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found in $RUNNER_TEMP/scry"; exit 1; }
+          echo "playwright=$PW" >> "$GITHUB_OUTPUT"
 
       - name: Cache the deployer's Playwright browser
         uses: actions/cache@v4
@@ -479,12 +499,16 @@ jobs:
       - name: Install the Scry deployer
         id: scry
         # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
+        # --ignore-scripts: nothing in its tree needs an install script, and none runs next to the checkout's token.
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/scry"
-          npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+          npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
           cd "$RUNNER_TEMP/scry"
           echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "playwright=$(npx --no-install playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+          PW="$(npx --no-install playwright --version | awk '{print $2}')"
+          [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found in $RUNNER_TEMP/scry"; exit 1; }
+          echo "playwright=$PW" >> "$GITHUB_OUTPUT"
 
       - name: Cache the deployer's Playwright browser
         uses: actions/cache@v4

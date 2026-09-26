@@ -137,6 +137,8 @@ describe('resolveAnalysis (D2: analysis on by default since 0.7.0)', () => {
     [{ analysis: false, withAnalysis: true }, false, '--no-analysis'],
     [{ withAnalysis: false }, false, 'withAnalysis is false in .storybook-deployer.json or SCRY_WITH_ANALYSIS'],
     [{ coverage: false }, false, '--no-coverage (analysis runs inside coverage)'],
+    [{ coverageReport: 'r.json' }, false, '--coverage-report (a supplied report has no screenshots)'],
+    [{ coverageReport: 'r.json', withAnalysis: true }, true, null],
   ])('%j -> enabled %s', (argv, enabled, optOut) => {
     expect(resolveAnalysis(argv)).toEqual({ enabled, optOut });
   });

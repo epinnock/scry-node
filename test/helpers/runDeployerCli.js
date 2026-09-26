@@ -13,10 +13,11 @@ const CLI = path.join(ROOT, 'bin', 'cli.js');
 const FAKE_SBCOV = path.join(ROOT, 'test', 'fixtures', 'fake-sbcov.js');
 const STORYBOOK_DIR = path.join(ROOT, 'test', 'fixtures', 'storybook-static');
 
-async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', env = {} } = {}) {
+async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', env = {}, configFile = null, command = null } = {}) {
   const stub = await startStub({ metadata });
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'scry-deployer-e2e-'));
   const argsFile = path.join(cwd, 'sbcov-args.json');
+  if (configFile) fs.writeFileSync(path.join(cwd, '.storybook-deployer.json'), configFile);
   const childEnv = {
     PATH: process.env.PATH,
     HOME: cwd,
@@ -29,15 +30,17 @@ async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', en
     FAKE_SBCOV_ARGS_FILE: argsFile,
     ...env,
   };
-  const fullArgs = [
-    CLI,
-    '--dir', STORYBOOK_DIR,
-    '--api-url', stub.url,
-    '--api-key', 'test-key-not-a-credential',
-    '--project', 'fixture',
-    '--deploy-version', 'main',
-    ...args,
-  ];
+  const fullArgs = command === 'coverage'
+    ? [CLI, 'coverage', '--dir', STORYBOOK_DIR, '--output', path.join(cwd, 'report.json'), ...args]
+    : [
+      CLI,
+      '--dir', STORYBOOK_DIR,
+      '--api-url', stub.url,
+      '--api-key', 'test-key-not-a-credential',
+      '--project', 'fixture',
+      '--deploy-version', 'main',
+      ...args,
+    ];
   try {
     const { code, out } = await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, fullArgs, { cwd, env: childEnv });

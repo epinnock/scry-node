@@ -214,7 +214,7 @@ uploaded and hosted in every case below, so the preview link works; the red run 
 | scry-sbcov exited 0 but its `sbcov-manifest.json` lists more dropped stories than `--max-dropped` allows | the archive is queued, then `❌ N of M stories were not captured (…), more than --max-dropped K allows.` | 1 |
 | Some stories dropped, within `--max-dropped` | `scry-sbcov: 417/461 stories captured, 44 not captured (timeout 40, render error 4).` then the queued line | 0 |
 | scry-sbcov exited non-zero with no archive (exit 2: broken capture config) | `❌ Analysis produced no metadata…` with `Cause: scry-sbcov rejected the capture config (exit 2)` | 1 |
-| `--no-analysis` (or `--no-coverage` without `--with-analysis`) | `ℹ️  Analysis skipped (--no-analysis): this build is hosted but NOT searchable.` | 0 |
+| `--no-analysis` (or `--no-coverage` / `--coverage-report <file>` without `--with-analysis`) | `ℹ️  Analysis skipped (--no-analysis): this build is hosted but NOT searchable.` | 0 |
 | Any error before the upload (bad `--dir`, bad API key, invalid flag) | `❌ Error: …` | 1 |
 
 scry-sbcov's own exit codes (0.5.2+): **0** ok, **2** the capture config is broken, misspelt or
@@ -397,11 +397,14 @@ refresh existing ones; see below). The steps it generates, after your Storybook 
   id: scry
   # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
   run: |
+    set -o pipefail
     mkdir -p "$RUNNER_TEMP/scry"
-    npm i --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+    npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
     cd "$RUNNER_TEMP/scry"
     echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
-    echo "playwright=$(npx --no-install playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+    PW="$(npx --no-install playwright --version | awk '{print $2}')"
+    [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found"; exit 1; }
+    echo "playwright=$PW" >> "$GITHUB_OUTPUT"
 
 - name: Cache the deployer's Playwright browser
   uses: actions/cache@v4

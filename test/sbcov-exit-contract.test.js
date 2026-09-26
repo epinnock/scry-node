@@ -76,6 +76,29 @@ describe('sbcov exit-code contract (end to end)', () => {
     expect(r.code).toBe(1);
   });
 
+  // Review finding 3: only exit 0 and 3 promise a complete archive.
+  test('a crash that left a partial archive behind never sends it', async () => {
+    const r = await runDeployerCli({ sbcovMode: 'crash-after-zip' });
+    expect(r.sentMetadata).toBe(false);
+    expect(r.out).toContain('Cause: scry-sbcov exited with code 1.');
+    expect(r.code).toBe(1);
+  });
+
+  // Review finding 6: say why an archive counted zero.
+  test('an archive with no metadata.json says so', async () => {
+    const r = await runDeployerCli({ sbcovMode: 'no-metadata' });
+    expect(r.sentMetadata).toBe(false);
+    expect(r.out).toContain('The archive: archive has no metadata.json.');
+    expect(r.code).toBe(1);
+  });
+
+  // Review finding 5: the coverage subcommand reads SCRY_MAX_DROPPED like the deploy does.
+  test('the coverage command forwards SCRY_MAX_DROPPED', async () => {
+    const r = await runDeployerCli({ command: 'coverage', sbcovMode: 'ok', env: { SCRY_MAX_DROPPED: '4' } });
+    expect(r.sbcovArgs).toEqual(expect.arrayContaining(['--max-dropped', '4']));
+    expect(r.code).toBe(0);
+  });
+
   test('any other non-zero exit is named too', async () => {
     const r = await runDeployerCli({ sbcovMode: 'crash' });
 

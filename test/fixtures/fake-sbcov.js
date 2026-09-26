@@ -10,6 +10,8 @@
 //   exit3     1 of 3 stories dropped above --max-dropped; report + archive of
 //             the 2 that captured; exit 3
 //   crash     could not run at all; nothing written; exit 1
+//   crash-after-zip  wrote part of an archive, then died; exit 1
+//   no-metadata  exit 0 with an archive that has no metadata.json
 //   dropped-ignored  1 of 3 dropped, listed in sbcov-manifest.json, but exit 0
 //             (an sbcov that ignores --max-dropped)
 // Archives carry sbcov-manifest.json {declared, captured, dropped:[...]} like
@@ -114,6 +116,25 @@ async function main() {
       console.log('sbcov: 2/3 stories captured, 1 not indexed (timeout 1)');
       console.error(`scry-sbcov: 1 story dropped, more than --max-dropped ${opt('--max-dropped') ?? '(default)'}`);
       return 3;
+    }
+    case 'crash-after-zip':
+      if (outputZip) await writeZip(STORIES.slice(0, 1));
+      console.error('scry-sbcov: killed mid-capture');
+      return 1;
+    case 'no-metadata': {
+      fs.writeFileSync(output, JSON.stringify(report({ passed: STORIES, failures: [] })));
+      if (outputZip) {
+        await new Promise((resolve, reject) => {
+          const out = fs.createWriteStream(outputZip);
+          const a = archiver('zip');
+          out.on('close', resolve);
+          a.on('error', reject);
+          a.pipe(out);
+          a.append('x', { name: 'images/only.png' });
+          a.finalize();
+        });
+      }
+      return 0;
     }
     case 'dropped-ignored': {
       const passed = STORIES.slice(0, 2);

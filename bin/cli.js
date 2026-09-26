@@ -111,6 +111,10 @@ function resolveAnalysis(argv) {
     if (argv.coverage === false) {
         return { enabled: false, optOut: '--no-coverage (analysis runs inside coverage)' };
     }
+    // A supplied report skips the coverage run, and with it the capture.
+    if (argv.coverageReport) {
+        return { enabled: false, optOut: '--coverage-report (a supplied report has no screenshots)' };
+    }
     return { enabled: true, optOut: null };
 }
 
@@ -282,6 +286,7 @@ function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbc
         logger.error(
             `\n❌ Analysis captured 0${of} stories, so NOTHING WILL BE INDEXED.\n` +
             (emptyArchive.firstError ? `   First capture error: ${emptyArchive.firstError}\n` : '') +
+            (emptyArchive.note ? `   The archive: ${emptyArchive.note}.\n` : '') +
             (sbcovFailure ? `   ${sbcovFailure.reason}.\n` : '') +
             '   The empty archive was not uploaded and no build was queued.\n' +
             HOSTED_NOT_SEARCHABLE
@@ -611,7 +616,7 @@ async function main() {
                 const logger = createLogger(argv);
 
                 // Capture settings: CLI flag > env > .storybook-deployer.json; unset = sbcov decides.
-                const { captureMode, captureScale, captureViewport } = loadConfig(argv);
+                const { captureMode, captureScale, captureViewport, maxDropped } = loadConfig(argv);
                 const result = await runCoverageAnalysis({
                     storybookDir: argv.dir,
                     baseBranch: argv.coverageBase || 'main',
@@ -622,7 +627,7 @@ async function main() {
                     captureMode,
                     captureScale,
                     captureViewport,
-                    maxDropped: argv.maxDropped,
+                    maxDropped,
                 });
                 const report = result.report;
 
