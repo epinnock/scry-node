@@ -80,6 +80,7 @@ describe('lib/coverage', () => {
     expect(result).toEqual({
       report: { summary: { metrics: {}, health: {} }, qualityGate: {}, generatedAt: 'x' },
       metadataZipPath: null,
+      sbcovFailure: null,
     });
     expect(fs.existsSync(outPath)).toBe(false);
 
@@ -133,7 +134,11 @@ describe('lib/coverage', () => {
 
     await expect(
       runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main', failOnThreshold: false })
-    ).resolves.toEqual({ report: null, metadataZipPath: null });
+    ).resolves.toEqual({
+      report: null,
+      metadataZipPath: null,
+      sbcovFailure: { exitCode: null, signal: null, reason: 'scry-sbcov could not be run: tool failed' },
+    });
   });
 
   test('runCoverageAnalysis() throws when tool fails and failOnThreshold=true', async () => {

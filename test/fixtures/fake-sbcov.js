@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+// A stand-in for @scrymore/scry-sbcov, selected with
+//   SCRY_SBCOV_CMD="node test/fixtures/fake-sbcov.js"
+// Behaviour comes from FAKE_SBCOV_MODE, following the exit-code contract with
+// scry-sbcov (#51):
+//   ok        3 stories captured; report + archive; exit 0
+//   empty     every story failed after the browser launched; archive with
+//             metadata.json = [] (what sbcov writes then); exit 0
+//   exit2     broken / unknown capture config; nothing written; exit 2
+//   exit3     1 of 3 stories dropped above --max-dropped; report + archive of
+//             the 2 that captured; exit 3
+//   crash     could not run at all; nothing written; exit 1
+// FAKE_SBCOV_ARGS_FILE, when set, receives the argv it was called with (JSON).
+const fs = require('fs');
+const path = require('path');
+const archiver = require(require.resolve('archiver', { paths: [path.join(__dirname, '..', '..')] }));
+
+const argv = process.argv.slice(2);
+const opt = (name) => {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
+if (process.env.FAKE_SBCOV_ARGS_FILE) {
+  fs.writeFileSync(process.env.FAKE_SBCOV_ARGS_FILE, JSON.stringify(argv));
+}
+
+const mode = process.env.FAKE_SBCOV_MODE || 'ok';
+const output = opt('--output');
+const outputZip = opt('--output-zip');
+
+const STORIES = ['button--primary', 'button--secondary', 'card--default'];
+
+function report({ passed, failures }) {
+  return {
+    generatedAt: new Date().toISOString(),
+    summary: {
+      totalComponents: 2,
+      componentsWithStories: 2,
+      totalStories: STORIES.length,
+      metrics: { componentCoverage: 100, propCoverage: 50, variantCoverage: 50 },
+      health: { status: failures.length ? 'broken' : 'healthy', passingStories: passed.length, failingStories: failures.length, passRate: Math.round((passed.length / STORIES.length) * 100) },
+    },
+    execution: {
+      executed: true,
+      summary: { total: STORIES.length, passed: passed.length, failed: failures.length, skipped: 0, duration: 1 },
+      stories: [],
+      failures: failures.map((storyId) => ({
+        storyId,
+        componentName: 'Button',
+        storyName: storyId,
+        failureType: 'render_error',
+        message: "browserType.launch: Executable doesn't exist at /home/runner/.cache/ms-playwright/chromium_headless_shell-1187/chrome-linux/headless_shell",
+      })),
+    },
+    qualityGate: { passed: true, checks: [] },
+  };
+}
+
+function writeZip(entries) {
+  return new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(outputZip);
+    const a = archiver('zip', { zlib: { level: 9 } });
+    out.on('close', resolve);
+    a.on('error', reject);
+    a.pipe(out);
+    const metadata = entries.map((storyId) => ({ storyId, componentName: 'Button', screenshotPath: `images/${storyId}.png` }));
+    a.append(JSON.stringify(metadata, null, 2), { name: 'metadata.json' });
+    for (const storyId of entries) a.append(Buffer.from('png'), { name: `images/${storyId}.png` });
+    a.finalize();
+  });
+}
+
+async function main() {
+  switch (mode) {
+    case 'ok':
+      fs.writeFileSync(output, JSON.stringify(report({ passed: STORIES, failures: [] })));
+      if (outputZip) await writeZip(STORIES);
+      return 0;
+    case 'empty':
+      fs.writeFileSync(output, JSON.stringify(report({ passed: [], failures: STORIES })));
+      if (outputZip) await writeZip([]);
+      return 0;
+    case 'exit2':
+      console.error('scry-sbcov: unknown capture option "captureModee" in scry-sbcov.config.json');
+      return 2;
+    case 'exit3': {
+      const passed = STORIES.slice(0, 2);
+      fs.writeFileSync(output, JSON.stringify(report({ passed, failures: STORIES.slice(2) })));
+      if (outputZip) await writeZip(passed);
+      console.error(`scry-sbcov: 1 story dropped, more than --max-dropped ${opt('--max-dropped') ?? '(default)'}`);
+      return 3;
+    }
+    case 'crash':
+      console.error('scry-sbcov: Cannot find module typescript');
+      return 1;
+    default:
+      console.error(`fake-sbcov: unknown FAKE_SBCOV_MODE ${mode}`);
+      return 99;
+  }
+}
+
+main().then((code) => process.exit(code), (err) => { console.error(err); process.exit(98); });

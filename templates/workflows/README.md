@@ -1,36 +1,42 @@
-# Workflow Templates
+# Workflow templates
 
-These are GitHub Actions workflow templates for projects that use `@scrymore/scry-deployer`.
+Copies of the two GitHub Actions workflows that `scry-deployer init` and
+`scry-deployer update-workflows` write, generated from `lib/templates.js` for an
+npm project whose Storybook build script is `build-storybook`. They are
+reference copies, not active workflows, and are not shipped in the npm package.
 
-**These files are NOT active workflows** - they are templates to be copied into your project's `.github/workflows/` directory.
+Do not edit them by hand. Change `lib/templates.js`, then run:
 
-## Available Templates
+```bash
+node scripts/regenerate-workflow-templates.js
+```
 
-### deploy-storybook.yml
-Deploys Storybook to Scry on push to main/master branch.
+`test/templates.test.js` fails when these files differ from the generator.
 
-Includes:
-- `fetch-depth: 0` (required for coverage new-code analysis)
-- Coverage flags (`--no-coverage`, `--coverage-fail-on-threshold`, `--coverage-base`)
-- `--with-analysis` for build processing service integration (screenshot capture + metadata ZIP)
+## What the workflows do
 
-### deploy-pr-preview.yml
-Creates preview deployments for pull requests with automatic PR comments.
+- Install `@scrymore/scry-deployer@^0.7.0` into `$RUNNER_TEMP/scry`, outside the
+  checkout, so the repo's own pin or lockfile cannot choose an older deployer
+  and a pnpm or yarn `node_modules` is left alone.
+- Install the Playwright browser with **that deployer's own Playwright**
+  (`npx --no-install playwright install --with-deps chromium-headless-shell` in
+  `$RUNNER_TEMP/scry`), cached by its Playwright version, so the browser build
+  is the one the analyzer launches.
+- Run that deployer with `--with-analysis`. It exits 1 when the build was asked
+  to index and nothing will be indexed.
+- `deploy-pr-preview.yml` skips draft PRs, deploys when a PR is marked ready,
+  and cancels a superseded run for the same PR (`concurrency`
+  `storybook-pr-<number>`).
 
-Includes:
-- `fetch-depth: 0` (required for coverage new-code analysis)
-- Draft PR optimization (skips coverage for draft PRs)
-- Coverage summary PR comments posted by the CLI (requires `GITHUB_TOKEN`)
-- `--with-analysis` for build processing service integration (screenshot capture + metadata ZIP)
+## Repository settings they read
 
-### deploy-example.yml
-A basic example workflow that can be manually triggered.
+- `SCRY_API_KEY` (secret), `SCRY_API_URL`, `SCRY_PROJECT_ID` (variables)
+- Optional variables: `SCRY_COVERAGE_ENABLED`, `SCRY_COVERAGE_FAIL_ON_THRESHOLD`,
+  `SCRY_COVERAGE_EXECUTE`, `SCRY_COVERAGE_BASE`, `SCRY_VIEW_URL`,
+  `SCRY_MAX_DROPPED` (end red when more than this many stories fail to capture)
 
-## Usage
+To refresh a project's workflows to the current templates:
 
-1. Copy the desired workflow file to your project's `.github/workflows/` directory
-2. Configure the required secrets and variables in your repository settings:
-   - `SCRY_API_KEY` (secret) - Your Scry API key
-   - `SCRY_API_URL` (variable) - The Scry API URL
-   - `SCRY_PROJECT_ID` (variable) - Your project ID
-3. Adjust the workflow as needed for your project (e.g., package manager, build commands)
+```bash
+npx -y @scrymore/scry-deployer@^0.7.0 update-workflows
+```

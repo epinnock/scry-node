@@ -150,17 +150,19 @@ describe('generated workflows', () => {
 
       expect(yaml).toMatch(/playwright install/);
       // Order matters: a browser installed after the deploy helps nobody.
-      expect(yaml.indexOf('playwright install')).toBeLessThan(yaml.indexOf('scry-deployer'));
+      expect(yaml.indexOf('playwright install')).toBeLessThan(yaml.indexOf('--dir ./storybook-static'));
     });
   }
 
-  it.each([
-    ['npm', 'npx --yes playwright install'],
-    ['pnpm', 'pnpm dlx playwright install'],
-    ['yarn', 'yarn dlx playwright install'],
-  ])('uses the right fetch command for %s', (pm, expected) => {
+  // Since 0.7.0 (ISSUES.md #50) the browser comes from the deployer's own
+  // Playwright, run inside the folder the deployer was installed into, so the
+  // repo's package manager never resolves it: no pnpm/yarn `dlx`, and no bare
+  // `npx playwright` against a pnpm-managed environment (the exit-127 case).
+  it.each(['npm', 'pnpm', 'yarn', 'bun'])('uses the deployer\'s own Playwright for %s', (pm) => {
     const yaml = templates.generateMainWorkflow('proj', 'https://api.example.com', pm, 'build-storybook');
 
-    expect(yaml).toContain(expected);
+    expect(yaml).toContain('npx --no-install playwright install --with-deps chromium-headless-shell');
+    expect(yaml).toContain('working-directory: ${{ runner.temp }}/scry');
+    expect(yaml).not.toMatch(/(pnpm|yarn) dlx playwright|npx --yes playwright/);
   });
 });
