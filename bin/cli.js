@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { initTelemetry, captureCliError, flushTelemetry } = require('../lib/telemetry.js');
+const { initTelemetry, captureCliError, flushTelemetry, redactArgv } = require('../lib/telemetry.js');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const fs = require('fs');
@@ -25,7 +25,8 @@ const { resolveBuildGitContext } = require('../lib/gitContext.js');
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
     logger.info('📊 Starting Storybook analysis...');
-    logger.debug(`Received arguments: ${JSON.stringify(argv)}`);
+    // Credentials masked: this line is also a Sentry breadcrumb.
+    logger.debug(`Received arguments: ${JSON.stringify(redactArgv(argv))}`);
 
     const outPath = path.join(os.tmpdir(), `storybook-analysis-${Date.now()}.zip`);
 
@@ -85,7 +86,8 @@ async function runAnalysis(argv) {
 async function runDeployment(argv) {
     const logger = createLogger(argv);
     logger.info('🚀 Starting deployment...');
-    logger.debug(`Received arguments: ${JSON.stringify(argv)}`);
+    // Credentials masked: this line is also a Sentry breadcrumb.
+    logger.debug(`Received arguments: ${JSON.stringify(redactArgv(argv))}`);
 
     const outPath = path.join(os.tmpdir(), `storybook-deployment-${Date.now()}.zip`);
     let metadataZipPath = null;
