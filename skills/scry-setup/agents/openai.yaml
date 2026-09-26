@@ -1,0 +1,4 @@
+interface:
+  display_name: "Set up Scry"
+  short_description: "Configure Scry deployment, MCP, and Figma linking"
+  default_prompt: "Use $scry-setup to inspect this project and configure the Scry integrations I need."
