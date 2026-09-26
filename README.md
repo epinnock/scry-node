@@ -184,7 +184,9 @@ The CLI is configured through a combination of command-line options and environm
 | `--api-url`    | `STORYBOOK_DEPLOYER_API_URL`          | Base URL for the deployment service API.                       | No       | `https://storybook-deployment-service.epinnock.workers.dev` |
 | `--project`    | `STORYBOOK_DEPLOYER_PROJECT`          | The project name/identifier.                                   | No       | `main`                               |
 | `--version`    | `STORYBOOK_DEPLOYER_VERSION`          | The version identifier for the deployment.                     | No       | `latest`                             |
-| `--with-analysis` | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | Enable Storybook analysis (story crawling + screenshots). Enabled by default in generated workflows. | No       | `false`                              |
+| `--with-analysis` | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` / `SCRY_WITH_ANALYSIS` | Capture screenshots and metadata so components are searchable. **On by default since 0.7.0.** | No       | on                                   |
+| `--no-analysis` | `STORYBOOK_DEPLOYER_ANALYSIS=false` | Host the Storybook without indexing it. The log says the build is NOT searchable. | No | - |
+| `--max-dropped` | `SCRY_MAX_DROPPED` (or `maxDropped` in `.storybook-deployer.json`) | How many stories may fail to capture before the deploy ends red. The deployer always passes it to scry-sbcov (0.5.2+); the stories that did capture are uploaded and queued first. | No | `0`: any dropped story ends the deploy red |
 | `--stories-dir` | `STORYBOOK_DEPLOYER_STORIES_DIR`     | Path to stories directory (optional, auto-detects .stories.* files). | No | Auto-detect                          |
 | `--screenshots-dir` | `STORYBOOK_DEPLOYER_SCREENSHOTS_DIR` | Directory for captured screenshots.                        | No       | `./screenshots`                      |
 | `--storybook-url` | `STORYBOOK_DEPLOYER_STORYBOOK_URL` | URL of running Storybook server for screenshot capture.        | No       | `http://localhost:6006`              |
@@ -192,8 +194,36 @@ The CLI is configured through a combination of command-line options and environm
 | `--capture-scale` | `SCRY_CAPTURE_SCALE`               | Screenshot device scale factor forwarded to scry-sbcov, `0 < n <= 4`. | No | unset: sbcov decides (`2` from sbcov 0.6) |
 | `--capture-viewport` | `SCRY_CAPTURE_VIEWPORT`         | Browser viewport `WIDTHxHEIGHT` forwarded to scry-sbcov.       | No | unset: sbcov decides (`1280x720`) |
 | `--verbose`    | `STORYBOOK_DEPLOYER_VERBOSE`          | Enable verbose logging for debugging purposes.                 | No       | `false`                              |
+| -              | `SCRY_NO_UPDATE_CHECK=1`              | Skip the check against npm `latest` (a one-line warning when this deployer is older; 2 s limit, never fails the deploy). | No | check on |
 | `--help`, `-h` | -                                     | Show the help message.                                       | -        | -                                    |
 | `--version`, `-v`| -                                     | Show the version number.                                     | -        | -                                    |
+
+### Exit codes and indexing (0.7.0)
+
+A deploy that was asked to index and will index nothing ends **red**. The Storybook is still
+uploaded and hosted in every case below, so the preview link works; the red run is the signal.
+
+| What happened | Log line | Exit code |
+|---|---|---|
+| Stories captured, metadata uploaded and queued | `⏳ Indexing has been queued, not finished.` | 0 |
+| Metadata upload rejected by the service | `❌ The metadata upload failed (<reason>), so NOTHING WILL BE INDEXED.` | 1 |
+| Metadata uploaded but not queued | `❌ Metadata was uploaded but not queued for processing, so NOTHING WILL BE INDEXED.` | 1 |
+| Analysis captured 0 stories (the empty archive is not uploaded, no build is queued) | `❌ Analysis captured 0 of N stories, so NOTHING WILL BE INDEXED.` plus the first capture error | 1 |
+| Analysis produced no archive (for example, no Playwright browser) | `❌ Analysis produced no metadata, so NOTHING WILL BE INDEXED.` | 1 |
+| scry-sbcov exited non-zero but wrote an archive (exit 3: more stories dropped than `--max-dropped`, default 0) | the archive is queued, then `❌ scry-sbcov dropped more stories than --max-dropped allows (exit 3)…` and `N of M stories were not captured (timeout 40, …)` | 1 |
+| scry-sbcov exited 0 but its `sbcov-manifest.json` lists more dropped stories than `--max-dropped` allows | the archive is queued, then `❌ N of M stories were not captured (…), more than --max-dropped K allows.` | 1 |
+| Some stories dropped, within `--max-dropped` | `scry-sbcov: 417/461 stories captured, 44 not captured (timeout 40, render error 4).` then the queued line | 0 |
+| scry-sbcov exited non-zero with no archive (exit 2: broken capture config) | `❌ Analysis produced no metadata…` with `Cause: scry-sbcov rejected the capture config (exit 2)` | 1 |
+| `--no-analysis` (or `--no-coverage` / `--coverage-report <file>` without `--with-analysis`) | `ℹ️  Analysis skipped (--no-analysis): this build is hosted but NOT searchable.` | 0 |
+| Any error before the upload (bad `--dir`, bad API key, invalid flag) | `❌ Error: …` | 1 |
+
+scry-sbcov's own exit codes (0.5.2+): **0** ok, **2** the capture config is broken, misspelt or
+unknown (no archive), **3** more stories dropped than `--max-dropped` (archive of the rest written).
+The deployer passes `--max-dropped 0` unless you set a value; with a scry-sbcov older than 0.5.2,
+which does not know the flag, it is not passed and the log says dropped stories cannot be counted.
+
+Before 0.7.0 the metadata-upload failure, the "not queued" case, an empty archive, a non-zero
+scry-sbcov exit and a workflow that simply forgot `--with-analysis` all ended green (ISSUES.md #50).
 
 ### Story File Auto-Detection
 
@@ -359,40 +389,61 @@ Without analysis, only the static site is zipped and uploaded as `{project}-{ver
 
 ## Example CI/CD Integration (GitHub Actions)
 
-This tool is ideal for use in a GitHub Actions workflow. The API key should be stored as a [GitHub Secret](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions).
+Let the deployer write the workflows for you (`init` for a new project, `update-workflows` to
+refresh existing ones; see below). The steps it generates, after your Storybook is built:
 
-**Basic deployment workflow:**
 ```yaml
-- name: Deploy Storybook
-  env:
-    STORYBOOK_DEPLOYER_API_URL: https://storybook-deployment-service.epinnock.workers.dev
-    STORYBOOK_DEPLOYER_PROJECT: ${{ github.event.repository.name }}
-    STORYBOOK_DEPLOYER_VERSION: ${{ github.sha }}
-  run: npx storybook-deploy --dir ./storybook-static
-```
-
-**Deployment with analysis:**
-```yaml
-- name: Start Storybook server
-  run: npm run storybook &
-  
-- name: Wait for Storybook
-  run: npx wait-on http://localhost:6006
-
-- name: Deploy Storybook with Analysis
-  env:
-    STORYBOOK_DEPLOYER_API_URL: https://storybook-deployment-service.epinnock.workers.dev
-    STORYBOOK_DEPLOYER_PROJECT: ${{ github.event.repository.name }}
-    STORYBOOK_DEPLOYER_VERSION: ${{ github.sha }}
+- name: Install the Scry deployer
+  id: scry
+  # Its own folder and a floor of ^0.7.0: the repo's own pin cannot pick an older deployer.
   run: |
-    npx storybook-deploy \
+    set -o pipefail
+    mkdir -p "$RUNNER_TEMP/scry"
+    npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0
+    cd "$RUNNER_TEMP/scry"
+    echo "version=$(node -p "require('@scrymore/scry-deployer/package.json').version")" >> "$GITHUB_OUTPUT"
+    PW="$(npx --no-install playwright --version | awk '{print $2}')"
+    [ -n "$PW" ] || { echo "::error::the deployer's Playwright was not found"; exit 1; }
+    echo "playwright=$PW" >> "$GITHUB_OUTPUT"
+
+- name: Cache the deployer's Playwright browser
+  uses: actions/cache@v4
+  with:
+    path: ~/.cache/ms-playwright
+    key: scry-pw-${{ runner.os }}-${{ steps.scry.outputs.playwright }}
+
+- name: Install the deployer's Playwright browser
+  working-directory: ${{ runner.temp }}/scry
+  run: npx --no-install playwright install --with-deps chromium-headless-shell
+
+- name: Deploy to Scry
+  run: |
+    "$RUNNER_TEMP/scry/node_modules/.bin/scry-deployer" \
       --dir ./storybook-static \
       --with-analysis \
-      --storybook-url http://localhost:6006
-  # Note: --stories-dir is optional; story files are auto-detected
+      --coverage-base ${{ vars.SCRY_COVERAGE_BASE || github.event.before }}
+  env:
+    STORYBOOK_DEPLOYER_API_URL: ${{ vars.SCRY_API_URL }}
+    STORYBOOK_DEPLOYER_PROJECT: ${{ vars.SCRY_PROJECT_ID }}
+    STORYBOOK_DEPLOYER_API_KEY: ${{ secrets.SCRY_API_KEY }}
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-See the example workflow file: `.github/workflows/deploy-example.yml`
+Why these steps and in this order:
+
+- **The deployer goes into its own folder** (`$RUNNER_TEMP/scry`), so a version pinned in your
+  `package.json` or lockfile cannot select an old deployer, and a pnpm or yarn `node_modules`
+  is never touched. The same steps work for npm, pnpm, yarn and bun projects.
+- **The browser comes from the deployer's own Playwright**, installed after the deployer.
+  A bare `npx playwright install` resolves whatever Playwright is newest (or your project's)
+  and can download a browser build the analyzer does not look for; every story then fails
+  and nothing is indexed.
+- **Never call a bare `npx @scrymore/scry-deployer`** in CI: it runs whatever version your
+  repository pins, however old.
+
+The full generated files are in [`templates/workflows/`](templates/workflows/). The PR
+workflow also skips draft PRs, deploys when a PR is marked ready, and cancels a superseded run
+for the same PR.
 
 ### PR Preview Deployments
 
@@ -443,7 +494,7 @@ If you're installing from GitHub, the workflow file is already included.
 
 **Note:** The `SCRY_VIEW_URL` is where users will access your deployed Storybook (e.g., `https://view.scrymore.com/{project}/pr-{number}/`). This is separate from `SCRY_API_URL`, which is the backend API endpoint used for uploads.
 
-**Note:** Generated workflows include `--with-analysis` by default for build processing service integration. To disable, add `STORYBOOK_DEPLOYER_WITH_ANALYSIS` as a repository variable set to `false`.
+**Note:** Generated workflows pass `--with-analysis`, and since 0.7.0 analysis is on by default anyway. A deploy that indexes nothing ends red (see "Exit codes and indexing"). To host a Storybook without indexing it, change the flag to `--no-analysis`. Any story that fails to capture ends the deploy red (after the rest are queued); to allow some, set the repository variable `SCRY_MAX_DROPPED`.
 
 **Step 3: Configure GitHub Actions Secrets (Optional)**
 
@@ -928,6 +979,20 @@ git remote set-url origin git@github.com:your-username/your-repo.git
   }
 }
 ```
+
+### Regenerate your workflows (`update-workflows`)
+
+Workflows written by an older deployer can be missing the browser step or run an old
+deployer. Refresh them from the current templates, without an API key:
+
+```bash
+npx -y @scrymore/scry-deployer@^0.7.0 update-workflows            # rewrite both files
+npx -y @scrymore/scry-deployer@^0.7.0 update-workflows --commit   # and commit them
+```
+
+It detects your package manager from the lockfile and your Storybook build script from
+`package.json`, and overwrites `.github/workflows/deploy-storybook.yml` and
+`.github/workflows/deploy-pr-preview.yml`. Review the diff if you customised them.
 
 ### Want to customize the generated workflows?
 

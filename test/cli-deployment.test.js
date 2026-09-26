@@ -54,7 +54,7 @@ describe('bin/cli runDeployment()', () => {
       const log = jest.spyOn(console, 'log').mockImplementation(() => {});
 
       const { runDeployment } = require('../bin/cli.js');
-      await runDeployment({ ...baseArgs });
+      await runDeployment({ ...baseArgs, withAnalysis: true });
 
       const out = log.mock.calls.map((c) => String(c[0])).join('\n');
       expect(out).toContain('Upload complete');
@@ -62,19 +62,23 @@ describe('bin/cli runDeployment()', () => {
       expect(out).not.toContain('Deployment successful');
     });
 
-    test('warns loudly when metadata uploaded but was not queued', async () => {
+    // ISSUES.md #50: "uploaded but not queued" means nothing will be indexed,
+    // and it used to be a warning over a green run.
+    test('ends red when metadata uploaded but was not queued', async () => {
       mockDeps(jest.fn().mockResolvedValue({
         zipUpload: { success: true },
         coverageUpload: null,
         metadataUpload: { success: true, queued: false },
       }));
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      jest.spyOn(console, 'log').mockImplementation(() => {});
+      const err = jest.spyOn(console, 'error').mockImplementation(() => {});
 
       const { runDeployment } = require('../bin/cli.js');
-      await runDeployment({ ...baseArgs });
+      await runDeployment({ ...baseArgs, withAnalysis: true });
 
-      const out = warn.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(out).toContain('NOT being indexed');
+      const out = err.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(out).toContain('not queued for processing, so NOTHING WILL BE INDEXED');
+      expect(process.exitCode).toBe(1);
     });
 
     // ISSUES.md #24. The gap between "queued" and "uploaded but not queued":
@@ -104,8 +108,8 @@ describe('bin/cli runDeployment()', () => {
       process.exitCode = previousExitCode;
     });
 
-    // The quiet path stays quiet: no analysis asked for, none expected.
-    test('stays silent when analysis was never requested', async () => {
+    // Opting out is allowed and ends green, but says so (ISSUES.md #50, D2).
+    test('an opted-out deploy exits 0 and says it is not searchable', async () => {
       mockDeps(jest.fn().mockResolvedValue({
         zipUpload: { success: true },
         coverageUpload: null,
@@ -120,6 +124,7 @@ describe('bin/cli runDeployment()', () => {
 
       const out = [...log.mock.calls, ...err.mock.calls].map((c) => String(c[0])).join('\n');
       expect(out).not.toContain('NOTHING WILL BE INDEXED');
+      expect(out).toContain('hosted but NOT searchable');
       expect(process.exitCode).not.toBe(1);
 
       process.exitCode = previousExitCode;
