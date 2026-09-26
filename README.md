@@ -188,6 +188,9 @@ The CLI is configured through a combination of command-line options and environm
 | `--stories-dir` | `STORYBOOK_DEPLOYER_STORIES_DIR`     | Path to stories directory (optional, auto-detects .stories.* files). | No | Auto-detect                          |
 | `--screenshots-dir` | `STORYBOOK_DEPLOYER_SCREENSHOTS_DIR` | Directory for captured screenshots.                        | No       | `./screenshots`                      |
 | `--storybook-url` | `STORYBOOK_DEPLOYER_STORYBOOK_URL` | URL of running Storybook server for screenshot capture.        | No       | `http://localhost:6006`              |
+| `--capture-mode` | `SCRY_CAPTURE_MODE`                 | Screenshot framing forwarded to scry-sbcov: `root` (crop to the component) or `viewport`. | No | unset: sbcov decides (`root` from sbcov 0.6) |
+| `--capture-scale` | `SCRY_CAPTURE_SCALE`               | Screenshot device scale factor forwarded to scry-sbcov, `0 < n <= 4`. | No | unset: sbcov decides (`2` from sbcov 0.6) |
+| `--capture-viewport` | `SCRY_CAPTURE_VIEWPORT`         | Browser viewport `WIDTHxHEIGHT` forwarded to scry-sbcov.       | No | unset: sbcov decides (`1280x720`) |
 | `--verbose`    | `STORYBOOK_DEPLOYER_VERBOSE`          | Enable verbose logging for debugging purposes.                 | No       | `false`                              |
 | `--help`, `-h` | -                                     | Show the help message.                                       | -        | -                                    |
 | `--version`, `-v`| -                                     | Show the version number.                                     | -        | -                                    |
@@ -260,6 +263,15 @@ The configuration file (`.storybook-deployer.json`) is automatically created in 
 - `project` → `--project` CLI option
 - `version` → `--version` CLI option
 - `verbose` → `--verbose` CLI option
+- `captureMode` → `--capture-mode` CLI option
+- `captureScale` → `--capture-scale` CLI option
+- `captureViewport` → `--capture-viewport` CLI option (`"390x844"` or `{ "width": 390, "height": 844 }`)
+
+**Screenshot capture settings.** `captureMode`, `captureScale` and `captureViewport` are validated and passed to
+scry-sbcov as `--capture-mode`, `--capture-scale` and `--capture-viewport`. Only the ones you set are passed, so
+leaving them out keeps sbcov's defaults and any `scry-sbcov.config.*` in your project in charge. An invalid value
+fails the run. To keep whole-window 1x screenshots, set `"captureMode": "viewport", "captureScale": 1`. For
+`root` mode, mark the component with `data-scry-root` (see the scry-sbcov README, "Capture settings").
 
 **See [`.storybook-deployer.example.json`](.storybook-deployer.example.json) for a complete configuration file with all available options and their default values.**
 

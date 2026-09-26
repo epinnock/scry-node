@@ -279,6 +279,19 @@ async function main() {
                         type: 'boolean',
                         default: false,
                     })
+                    .option('capture-mode', {
+                        describe: 'Screenshot framing forwarded to scry-sbcov: root or viewport (unset: sbcov default)',
+                        type: 'string',
+                        choices: ['root', 'viewport'],
+                    })
+                    .option('capture-scale', {
+                        describe: 'Screenshot device scale factor forwarded to scry-sbcov, 0 < n <= 4 (unset: sbcov default)',
+                        type: 'string',
+                    })
+                    .option('capture-viewport', {
+                        describe: 'Browser viewport WIDTHxHEIGHT forwarded to scry-sbcov (unset: sbcov default)',
+                        type: 'string',
+                    })
                     .option('with-analysis', {
                         describe: 'Include Storybook analysis (screenshots, metadata)',
                         type: 'boolean',
@@ -387,6 +400,19 @@ async function main() {
                         default: false,
                         alias: 'coverageExecute'
                     })
+                    .option('capture-mode', {
+                        describe: 'Screenshot framing forwarded to scry-sbcov: root or viewport (unset: sbcov default)',
+                        type: 'string',
+                        choices: ['root', 'viewport'],
+                    })
+                    .option('capture-scale', {
+                        describe: 'Screenshot device scale factor forwarded to scry-sbcov, 0 < n <= 4 (unset: sbcov default)',
+                        type: 'string',
+                    })
+                    .option('capture-viewport', {
+                        describe: 'Browser viewport WIDTHxHEIGHT forwarded to scry-sbcov (unset: sbcov default)',
+                        type: 'string',
+                    })
                     .option('output', {
                         describe: 'Where to write the JSON coverage report',
                         type: 'string',
@@ -400,6 +426,8 @@ async function main() {
             }, async (argv) => {
                 const logger = createLogger(argv);
 
+                // Capture settings: CLI flag > env > .storybook-deployer.json; unset = sbcov decides.
+                const { captureMode, captureScale, captureViewport } = loadConfig(argv);
                 const result = await runCoverageAnalysis({
                     storybookDir: argv.dir,
                     baseBranch: argv.coverageBase || 'main',
@@ -407,6 +435,9 @@ async function main() {
                     execute: Boolean(argv.coverageExecute),
                     outputPath: argv.output,
                     keepReport: true,
+                    captureMode,
+                    captureScale,
+                    captureViewport,
                 });
                 const report = result.report;
 
@@ -610,6 +641,9 @@ async function resolveCoverage(argv, logger) {
                 execute: Boolean(argv.coverageExecute) || needsScreenshots,
                 screenshots: needsScreenshots,
                 outputZipPath,
+                captureMode: argv.captureMode,
+                captureScale: argv.captureScale,
+                captureViewport: argv.captureViewport,
             });
             report = result.report;
             metadataZipPath = result.metadataZipPath;
