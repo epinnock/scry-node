@@ -186,7 +186,7 @@ The CLI is configured through a combination of command-line options and environm
 | `--version`    | `STORYBOOK_DEPLOYER_VERSION`          | The version identifier for the deployment.                     | No       | `latest`                             |
 | `--with-analysis` | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` / `SCRY_WITH_ANALYSIS` | Capture screenshots and metadata so components are searchable. **On by default since 0.7.0.** | No       | on                                   |
 | `--no-analysis` | `STORYBOOK_DEPLOYER_ANALYSIS=false` | Host the Storybook without indexing it. The log says the build is NOT searchable. | No | - |
-| `--max-dropped` | `SCRY_MAX_DROPPED`                 | Forwarded to scry-sbcov: end red when more than this many stories fail to capture. | No | unset: sbcov decides |
+| `--max-dropped` | `SCRY_MAX_DROPPED` (or `maxDropped` in `.storybook-deployer.json`) | How many stories may fail to capture before the deploy ends red. The deployer always passes it to scry-sbcov (0.5.2+); the stories that did capture are uploaded and queued first. | No | `0`: any dropped story ends the deploy red |
 | `--stories-dir` | `STORYBOOK_DEPLOYER_STORIES_DIR`     | Path to stories directory (optional, auto-detects .stories.* files). | No | Auto-detect                          |
 | `--screenshots-dir` | `STORYBOOK_DEPLOYER_SCREENSHOTS_DIR` | Directory for captured screenshots.                        | No       | `./screenshots`                      |
 | `--storybook-url` | `STORYBOOK_DEPLOYER_STORYBOOK_URL` | URL of running Storybook server for screenshot capture.        | No       | `http://localhost:6006`              |
@@ -210,10 +210,17 @@ uploaded and hosted in every case below, so the preview link works; the red run 
 | Metadata uploaded but not queued | `❌ Metadata was uploaded but not queued for processing, so NOTHING WILL BE INDEXED.` | 1 |
 | Analysis captured 0 stories (the empty archive is not uploaded, no build is queued) | `❌ Analysis captured 0 of N stories, so NOTHING WILL BE INDEXED.` plus the first capture error | 1 |
 | Analysis produced no archive (for example, no Playwright browser) | `❌ Analysis produced no metadata, so NOTHING WILL BE INDEXED.` | 1 |
-| scry-sbcov exited non-zero but wrote an archive (exit 3: more stories dropped than `--max-dropped`) | the archive is queued, then `❌ scry-sbcov dropped more stories than --max-dropped allows (exit 3)…` | 1 |
+| scry-sbcov exited non-zero but wrote an archive (exit 3: more stories dropped than `--max-dropped`, default 0) | the archive is queued, then `❌ scry-sbcov dropped more stories than --max-dropped allows (exit 3)…` and `N of M stories were not captured (timeout 40, …)` | 1 |
+| scry-sbcov exited 0 but its `sbcov-manifest.json` lists more dropped stories than `--max-dropped` allows | the archive is queued, then `❌ N of M stories were not captured (…), more than --max-dropped K allows.` | 1 |
+| Some stories dropped, within `--max-dropped` | `scry-sbcov: 417/461 stories captured, 44 not captured (timeout 40, render error 4).` then the queued line | 0 |
 | scry-sbcov exited non-zero with no archive (exit 2: broken capture config) | `❌ Analysis produced no metadata…` with `Cause: scry-sbcov rejected the capture config (exit 2)` | 1 |
 | `--no-analysis` (or `--no-coverage` without `--with-analysis`) | `ℹ️  Analysis skipped (--no-analysis): this build is hosted but NOT searchable.` | 0 |
 | Any error before the upload (bad `--dir`, bad API key, invalid flag) | `❌ Error: …` | 1 |
+
+scry-sbcov's own exit codes (0.5.2+): **0** ok, **2** the capture config is broken, misspelt or
+unknown (no archive), **3** more stories dropped than `--max-dropped` (archive of the rest written).
+The deployer passes `--max-dropped 0` unless you set a value; with a scry-sbcov older than 0.5.2,
+which does not know the flag, it is not passed and the log says dropped stories cannot be counted.
 
 Before 0.7.0 the metadata-upload failure, the "not queued" case, an empty archive, a non-zero
 scry-sbcov exit and a workflow that simply forgot `--with-analysis` all ended green (ISSUES.md #50).
@@ -484,7 +491,7 @@ If you're installing from GitHub, the workflow file is already included.
 
 **Note:** The `SCRY_VIEW_URL` is where users will access your deployed Storybook (e.g., `https://view.scrymore.com/{project}/pr-{number}/`). This is separate from `SCRY_API_URL`, which is the backend API endpoint used for uploads.
 
-**Note:** Generated workflows pass `--with-analysis`, and since 0.7.0 analysis is on by default anyway. A deploy that indexes nothing ends red (see "Exit codes and indexing"). To host a Storybook without indexing it, change the flag to `--no-analysis`. To end red when too many stories fail to capture, set the repository variable `SCRY_MAX_DROPPED`.
+**Note:** Generated workflows pass `--with-analysis`, and since 0.7.0 analysis is on by default anyway. A deploy that indexes nothing ends red (see "Exit codes and indexing"). To host a Storybook without indexing it, change the flag to `--no-analysis`. Any story that fails to capture ends the deploy red (after the rest are queued); to allow some, set the repository variable `SCRY_MAX_DROPPED`.
 
 **Step 3: Configure GitHub Actions Secrets (Optional)**
 

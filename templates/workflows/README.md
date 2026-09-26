@@ -33,7 +33,7 @@ node scripts/regenerate-workflow-templates.js
 - `SCRY_API_KEY` (secret), `SCRY_API_URL`, `SCRY_PROJECT_ID` (variables)
 - Optional variables: `SCRY_COVERAGE_ENABLED`, `SCRY_COVERAGE_FAIL_ON_THRESHOLD`,
   `SCRY_COVERAGE_EXECUTE`, `SCRY_COVERAGE_BASE`, `SCRY_VIEW_URL`,
-  `SCRY_MAX_DROPPED` (end red when more than this many stories fail to capture)
+  `SCRY_MAX_DROPPED` (stories allowed to fail capture before the deploy ends red; default 0)
 
 To refresh a project's workflows to the current templates:
 

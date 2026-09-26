@@ -22,7 +22,48 @@ describe('sbcov exit-code contract (end to end)', () => {
     expect(r.out).toContain('Analysis archive holds 2 captured stories.');
     expect(r.out).toContain('queued, not finished');
     expect(r.out).toContain('scry-sbcov dropped more stories than --max-dropped allows (exit 3). The stories that were captured are queued');
+    expect(r.out).toContain('1 of 3 stories were not captured (timeout 1); see sbcov-manifest.json in the archive.');
     expect(r.code).toBe(1);
+  });
+
+  // Contract update (orchestrator, 2026-09-26): sbcov 0.5.2 exits 3 only when
+  // --max-dropped is passed, so the deployer always passes it (0 unless the
+  // user set a value) and also enforces it from sbcov-manifest.json.
+  test('by default the deployer asks sbcov for --max-dropped 0', async () => {
+    const r = await runDeployerCli({ sbcovMode: 'ok' });
+    expect(r.sbcovArgs).toEqual(expect.arrayContaining(['--max-dropped', '0']));
+    expect(r.out).toContain('scry-sbcov: 3/3 stories captured, 0 not captured.');
+    expect(r.code).toBe(0);
+  });
+
+  test("the user's --max-dropped is forwarded instead of the default", async () => {
+    const r = await runDeployerCli({ args: ['--max-dropped', '5'], sbcovMode: 'ok' });
+    const i = r.sbcovArgs.indexOf('--max-dropped');
+    expect(r.sbcovArgs[i + 1]).toBe('5');
+    expect(r.sbcovArgs.filter((a) => a === '--max-dropped')).toHaveLength(1);
+  });
+
+  test('an sbcov that exits 0 but lists drops in its manifest still ends red, after uploading', async () => {
+    const r = await runDeployerCli({ sbcovMode: 'dropped-ignored' });
+    expect(r.sentMetadata).toBe(true);
+    expect(r.out).toContain('queued, not finished');
+    expect(r.out).toContain('1 of 3 stories were not captured (timeout 1), more than');
+    expect(r.out).toContain('--max-dropped 0 allows. The 2 captured stories are queued');
+    expect(r.code).toBe(1);
+  });
+
+  test('drops within the --max-dropped allowance end green and are still counted', async () => {
+    const r = await runDeployerCli({ args: ['--max-dropped', '5'], sbcovMode: 'dropped-ignored' });
+    expect(r.out).toContain('scry-sbcov: 2/3 stories captured, 1 not captured (timeout 1).');
+    expect(r.code).toBe(0);
+  });
+
+  test('an sbcov too old for --max-dropped is not sent the flag, and the log says drops cannot be counted', async () => {
+    const r = await runDeployerCli({ sbcovMode: 'ok', env: { FAKE_SBCOV_OLD: '1' } });
+    expect(r.sbcovArgs).not.toContain('--max-dropped');
+    expect(r.out).toContain('does not support --max-dropped');
+    expect(r.sentMetadata).toBe(true);
+    expect(r.code).toBe(0);
   });
 
   test('exit 2 with no archive: nothing queued, the run ends red naming the broken capture config', async () => {
@@ -109,7 +150,11 @@ describe('lib/coverage runCoverageAnalysis() against the fake sbcov (in process)
   test('exit 2 returns no report, no archive, and the reason', async () => {
     useMode('exit2');
     const res = await runCoverageAnalysis({ storybookDir: STORYBOOK_DIR, screenshots: true, outputZipPath: path.join(dir, 'm.zip') });
-    expect(res).toEqual({ report: null, metadataZipPath: null, sbcovFailure: { exitCode: 2, signal: null, reason: 'scry-sbcov rejected the capture config (exit 2)' } });
+    expect(res).toEqual({
+      report: null, metadataZipPath: null,
+      sbcovFailure: { exitCode: 2, signal: null, reason: 'scry-sbcov rejected the capture config (exit 2)' },
+      effectiveMaxDropped: 0, maxDroppedUnsupported: false,
+    });
   });
 
   test('describeSbcovExit names every case', () => {

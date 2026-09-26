@@ -81,6 +81,8 @@ describe('lib/coverage', () => {
       report: { summary: { metrics: {}, health: {} }, qualityGate: {}, generatedAt: 'x' },
       metadataZipPath: null,
       sbcovFailure: null,
+      effectiveMaxDropped: null,
+      maxDroppedUnsupported: false,
     });
     expect(fs.existsSync(outPath)).toBe(false);
 
@@ -114,7 +116,7 @@ describe('lib/coverage', () => {
       outputZipPath: '/tmp/meta.zip',
     });
 
-    const calledCommand = execSync.mock.calls[0][0];
+    const calledCommand = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(calledCommand).toContain('--screenshots');
     expect(calledCommand).toContain('--output-zip');
     expect(result.metadataZipPath).toBe('/tmp/meta.zip');
@@ -138,6 +140,8 @@ describe('lib/coverage', () => {
       report: null,
       metadataZipPath: null,
       sbcovFailure: { exitCode: null, signal: null, reason: 'scry-sbcov could not be run: tool failed' },
+      effectiveMaxDropped: null,
+      maxDroppedUnsupported: false,
     });
   });
 
@@ -180,7 +184,7 @@ describe('lib/coverage', () => {
 
     await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main' });
 
-    const calledCommand = execSync.mock.calls[0][0];
+    const calledCommand = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(calledCommand).toContain('--base');
     expect(calledCommand).toContain('d34db33fd34db33fd34db33fd34db33fd34db33f');
   });
@@ -208,7 +212,7 @@ describe('lib/coverage', () => {
 
     await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'develop' });
 
-    const calledCommand = execSync.mock.calls[0][0];
+    const calledCommand = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(calledCommand).toContain('--base');
     expect(calledCommand).toContain('origin/develop');
   });
@@ -236,7 +240,7 @@ describe('lib/coverage', () => {
 
     await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main' });
 
-    const calledCommand = execSync.mock.calls[0][0];
+    const calledCommand = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(calledCommand).toContain('--base');
     expect(calledCommand).toContain('abc123abc123abc123abc123abc123abc123abc1');
   });
@@ -264,7 +268,7 @@ describe('lib/coverage', () => {
 
     await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main' });
 
-    const calledCommand = execSync.mock.calls[0][0];
+    const calledCommand = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(calledCommand).toContain('--base');
     expect(calledCommand).toContain('bbd00fbbd00fbbd00fbbd00fbbd00fbbd00fbbd0');
   });
@@ -292,7 +296,7 @@ describe('lib/coverage', () => {
 
     await runCoverageAnalysis({ storybookDir: './storybook-static', baseBranch: 'main' });
 
-    const calledCommand = execSync.mock.calls[0][0];
+    const calledCommand = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(calledCommand).toContain('node /tmp/local-sbcov.js');
     delete process.env.SCRY_SBCOV_CMD;
   });

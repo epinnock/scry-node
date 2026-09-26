@@ -76,7 +76,7 @@ describe('bin/cli helpers', () => {
 
     const res = await resolveCoverage({ coverage: false }, logger);
 
-    expect(res).toEqual({ coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null });
+    expect(res).toEqual({ coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null, effectiveMaxDropped: null, maxDroppedUnsupported: false });
   });
 
   test('resolveCoverage() loads report from --coverage-report path', async () => {

@@ -21,7 +21,7 @@ const { runUpdateWorkflows } = require('../lib/update-workflows.js');
 const { runQueueImageUpload } = require('../lib/imageUpload.js');
 const { runLocalImageProcessing } = require('../lib/localImageProcessing.js');
 const { resolveBuildGitContext } = require('../lib/gitContext.js');
-const { countMetadataEntries } = require('../lib/metadataArchive.js');
+const { countMetadataEntries, readSbcovManifest, droppedReasons } = require('../lib/metadataArchive.js');
 const { checkForNewerVersion } = require('../lib/versionCheck.js');
 const { version: DEPLOYER_VERSION } = require('../package.json');
 
@@ -155,6 +155,28 @@ async function runDeployment(argv) {
         // archive is not sent and the run ends red below.
         let metadataToSend = metadataZipPath;
         let emptyArchive = null;
+        let dropped = null;
+        if (coverage.maxDroppedUnsupported) {
+            logger.warn(
+                '⚠️  The installed scry-sbcov does not support --max-dropped, so stories that fail to\n' +
+                '   capture are not counted by it. Upgrade @scrymore/scry-sbcov to 0.5.2 or later.'
+            );
+        }
+        if (metadataZipPath) {
+            // sbcov 0.5.2+ lists every story it could not capture in the archive.
+            // Read it whatever sbcov's exit code: a sbcov that ignored
+            // --max-dropped still names its drops, and the allowance is applied here.
+            const { manifest, error: manifestError } = readSbcovManifest(metadataZipPath);
+            if (manifestError) {
+                logger.warn(`⚠️  ${manifestError}; dropped stories cannot be counted for this build.`);
+            } else if (manifest) {
+                const allowed = coverage.effectiveMaxDropped ?? 0;
+                const n = manifest.dropped.length;
+                const reasons = n ? ` (${droppedReasons(manifest.dropped)})` : '';
+                logger.info(`scry-sbcov: ${manifest.captured ?? '?'}/${manifest.declared ?? '?'} stories captured, ${n} not captured${reasons}.`);
+                dropped = { n, allowed, reasons, declared: manifest.declared, captured: manifest.captured };
+            }
+        }
         if (metadataZipPath) {
             const counted = countMetadataEntries(metadataZipPath);
             if (counted.count === 0) {
@@ -215,7 +237,7 @@ async function runDeployment(argv) {
         logger.success('\n✅ Upload complete.');
         logUploadLinks(argv, coverageSummary, uploadResult, logger);
 
-        reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, logger });
+        reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, dropped, logger });
 
     } finally {
         // 4. Clean up the local archive
@@ -240,7 +262,7 @@ const HOSTED_NOT_SEARCHABLE =
  * The rule (ISSUES.md #24, #50): a deploy that was asked to index and will
  * index nothing ends with exit code 1. The Storybook is hosted either way.
  */
-function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, logger }) {
+function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, dropped = null, logger }) {
     const metadataUpload = uploadResult?.metadataUpload || null;
 
     if (!argv.withAnalysis) {
@@ -287,6 +309,9 @@ function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbc
             '   nothing here. Before relying on search, confirm the build shows\n' +
             "   processingStatus 'completed' rather than 'failed'."
         );
+        const droppedLine = dropped && dropped.n
+            ? `   ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}; see sbcov-manifest.json in the archive.\n`
+            : '';
         if (sbcovFailure) {
             // The contract with scry-sbcov (#51): exit 3 = stories were dropped
             // above --max-dropped, and the archive of the ones that captured
@@ -295,7 +320,21 @@ function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbc
             logger.error(
                 `\n❌ ${sbcovFailure.reason}. The stories that were captured are queued for\n` +
                 '   indexing, but this build is incomplete: some components will be\n' +
-                '   missing from search. See the scry-sbcov output above.'
+                '   missing from search. See the scry-sbcov output above.\n' +
+                droppedLine
+            );
+        } else if (dropped && dropped.n > dropped.allowed) {
+            // sbcov exited 0 but its manifest lists more drops than allowed: an
+            // sbcov that ignored --max-dropped, or one run without it. The
+            // allowance is enforced here too, so any dropped story still ends
+            // the deploy red (after the rest were queued) unless --max-dropped
+            // says otherwise.
+            process.exitCode = 1;
+            logger.error(
+                `\n❌ ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}, more than\n` +
+                `   --max-dropped ${dropped.allowed} allows. The ${dropped.captured ?? 'other'} captured stories are queued; the rest\n` +
+                '   will not be searchable. See sbcov-manifest.json in the archive, or raise\n' +
+                '   --max-dropped (SCRY_MAX_DROPPED) to accept them.'
             );
         }
         return;
@@ -431,7 +470,7 @@ async function main() {
                         type: 'boolean',
                     })
                     .option('max-dropped', {
-                        describe: 'Forwarded to scry-sbcov: end red when more than this many stories fail to capture (unset: sbcov default)',
+                        describe: 'End red (after uploading the rest) when more than this many stories fail to capture. Default 0: any dropped story ends the deploy red. Forwarded to scry-sbcov',
                         type: 'string',
                     })
                     .option('storybook-url', {
@@ -789,13 +828,15 @@ async function resolveCoverage(argv, logger) {
     const enabled = argv.coverage !== false;
     if (!enabled) {
         logger.info('Coverage: disabled (--no-coverage)');
-        return { coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null };
+        return { coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null, effectiveMaxDropped: null, maxDroppedUnsupported: false };
     }
 
     try {
         let report = null;
         let metadataZipPath = null;
         let sbcovFailure = null;
+        let effectiveMaxDropped = null;
+        let maxDroppedUnsupported = false;
 
         if (argv.coverageReport) {
             logger.info(`Coverage: using existing report at ${argv.coverageReport}`);
@@ -821,6 +862,8 @@ async function resolveCoverage(argv, logger) {
             report = result.report;
             metadataZipPath = result.metadataZipPath;
             sbcovFailure = result.sbcovFailure || null;
+            effectiveMaxDropped = result.effectiveMaxDropped ?? null;
+            maxDroppedUnsupported = Boolean(result.maxDroppedUnsupported);
         }
 
         const summary = extractCoverageSummary(report);
@@ -831,7 +874,7 @@ async function resolveCoverage(argv, logger) {
             logger.info('Coverage: no report generated (tool failed or report shape unexpected)');
         }
 
-        return { coverageReport: report, coverageSummary: summary, metadataZipPath, sbcovFailure };
+        return { coverageReport: report, coverageSummary: summary, metadataZipPath, sbcovFailure, effectiveMaxDropped, maxDroppedUnsupported };
     } catch (err) {
         logger.error(`Coverage: failed (${err.message})`);
         throw err;

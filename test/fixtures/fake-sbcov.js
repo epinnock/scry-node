@@ -10,6 +10,11 @@
 //   exit3     1 of 3 stories dropped above --max-dropped; report + archive of
 //             the 2 that captured; exit 3
 //   crash     could not run at all; nothing written; exit 1
+//   dropped-ignored  1 of 3 dropped, listed in sbcov-manifest.json, but exit 0
+//             (an sbcov that ignores --max-dropped)
+// Archives carry sbcov-manifest.json {declared, captured, dropped:[...]} like
+// sbcov 0.5.2. FAKE_SBCOV_OLD=1 behaves like sbcov <= 0.5.1: no manifest, no
+// --max-dropped in --help, and "unknown option" (exit 1) if it is passed.
 // FAKE_SBCOV_ARGS_FILE, when set, receives the argv it was called with (JSON).
 const fs = require('fs');
 const path = require('path');
@@ -20,6 +25,16 @@ const opt = (name) => {
   const i = argv.indexOf(name);
   return i >= 0 ? argv[i + 1] : undefined;
 };
+const OLD = process.env.FAKE_SBCOV_OLD === '1';
+if (argv.includes('--help')) {
+  console.log('Usage: scry-sbcov [options]\n  --output <path>\n  --output-zip <path>\n  --screenshots' +
+    (OLD ? '' : '\n  --max-dropped <n>  exit 3 when more stories than this are dropped'));
+  process.exit(0);
+}
+if (OLD && argv.includes('--max-dropped')) {
+  console.error("error: unknown option '--max-dropped'");
+  process.exit(1);
+}
 if (process.env.FAKE_SBCOV_ARGS_FILE) {
   fs.writeFileSync(process.env.FAKE_SBCOV_ARGS_FILE, JSON.stringify(argv));
 }
@@ -56,7 +71,7 @@ function report({ passed, failures }) {
   };
 }
 
-function writeZip(entries) {
+function writeZip(entries, dropped = []) {
   return new Promise((resolve, reject) => {
     const out = fs.createWriteStream(outputZip);
     const a = archiver('zip', { zlib: { level: 9 } });
@@ -65,6 +80,15 @@ function writeZip(entries) {
     a.pipe(out);
     const metadata = entries.map((storyId) => ({ storyId, componentName: 'Button', screenshotPath: `images/${storyId}.png` }));
     a.append(JSON.stringify(metadata, null, 2), { name: 'metadata.json' });
+    if (!OLD) {
+      a.append(JSON.stringify({
+        declared: STORIES.length,
+        captured: entries.length,
+        dropped: dropped.map((storyId) => ({ storyId, storyTitle: storyId, reason: 'timeout' })),
+        capture: { mode: 'root', viewport: '1280x720', scale: 2, source: 'defaults' },
+        sbcovVersion: '0.5.2-fake',
+      }), { name: 'sbcov-manifest.json' });
+    }
     for (const storyId of entries) a.append(Buffer.from('png'), { name: `images/${storyId}.png` });
     a.finalize();
   });
@@ -78,7 +102,7 @@ async function main() {
       return 0;
     case 'empty':
       fs.writeFileSync(output, JSON.stringify(report({ passed: [], failures: STORIES })));
-      if (outputZip) await writeZip([]);
+      if (outputZip) await writeZip([], STORIES);
       return 0;
     case 'exit2':
       console.error('scry-sbcov: unknown capture option "captureModee" in scry-sbcov.config.json');
@@ -86,9 +110,16 @@ async function main() {
     case 'exit3': {
       const passed = STORIES.slice(0, 2);
       fs.writeFileSync(output, JSON.stringify(report({ passed, failures: STORIES.slice(2) })));
-      if (outputZip) await writeZip(passed);
+      if (outputZip) await writeZip(passed, STORIES.slice(2));
+      console.log('sbcov: 2/3 stories captured, 1 not indexed (timeout 1)');
       console.error(`scry-sbcov: 1 story dropped, more than --max-dropped ${opt('--max-dropped') ?? '(default)'}`);
       return 3;
+    }
+    case 'dropped-ignored': {
+      const passed = STORIES.slice(0, 2);
+      fs.writeFileSync(output, JSON.stringify(report({ passed, failures: STORIES.slice(2) })));
+      if (outputZip) await writeZip(passed, STORIES.slice(2));
+      return 0;
     }
     case 'crash':
       console.error('scry-sbcov: Cannot find module typescript');

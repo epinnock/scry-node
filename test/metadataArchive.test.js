@@ -65,6 +65,40 @@ describe('countMetadataEntries (ISSUES.md #50)', () => {
   });
 });
 
+describe('readSbcovManifest / droppedReasons (sbcov 0.5.2 contract)', () => {
+  const { readSbcovManifest, droppedReasons } = require('../lib/metadataArchive.js');
+  let dir;
+  beforeAll(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scry-manifest-')); });
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  test('reads declared, captured and the dropped list', async () => {
+    const p = path.join(dir, 'm.zip');
+    await writeZip(p, {
+      'metadata.json': '[]',
+      'sbcov-manifest.json': JSON.stringify({ declared: 461, captured: 417, dropped: [{ storyId: 'a', reason: 'timeout' }], sbcovVersion: '0.5.2' }),
+    });
+    const r = readSbcovManifest(p);
+    expect(r.error).toBeNull();
+    expect(r.manifest).toMatchObject({ declared: 461, captured: 417, sbcovVersion: '0.5.2' });
+    expect(r.manifest.dropped).toHaveLength(1);
+  });
+
+  test('no manifest (sbcov <= 0.5.1) is null without an error; a broken one says why', async () => {
+    const none = path.join(dir, 'none.zip');
+    await writeZip(none, { 'metadata.json': '[]' });
+    expect(readSbcovManifest(none)).toEqual({ manifest: null, error: null });
+    const bad = path.join(dir, 'bad.zip');
+    await writeZip(bad, { 'metadata.json': '[]', 'sbcov-manifest.json': '{"declared":3}' });
+    expect(readSbcovManifest(bad).error).toMatch(/no dropped list/);
+  });
+
+  test('groups reasons, most common first', () => {
+    expect(droppedReasons([{ reason: 'render_error' }, { reason: 'timeout' }, { reason: 'timeout' }, {}]))
+      .toBe('timeout 2, render error 1, unknown 1');
+  });
+});
+
+// Last: it resets the module registry, which archiver's lazy requires do not survive.
 describe('runDeployment with an archive it cannot count', () => {
   afterEach(() => { jest.resetModules(); jest.restoreAllMocks(); });
 

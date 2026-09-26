@@ -66,6 +66,6 @@ jobs:
           STORYBOOK_DEPLOYER_API_URL: ${{ vars.SCRY_API_URL }}
           STORYBOOK_DEPLOYER_PROJECT: ${{ vars.SCRY_PROJECT_ID }}
           STORYBOOK_DEPLOYER_API_KEY: ${{ secrets.SCRY_API_KEY }}
-          # Optional: end red when more than this many stories fail to capture.
+          # Optional: stories allowed to fail capture before the deploy ends red (default 0).
           SCRY_MAX_DROPPED: ${{ vars.SCRY_MAX_DROPPED }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
