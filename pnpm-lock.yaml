@@ -12,8 +12,8 @@ importers:
         specifier: ^20.0.0
         version: 20.1.2
       '@scrymore/scry-sbcov':
-        specifier: ^0.5.0
-        version: 0.5.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)
+        specifier: ^0.6.0
+        version: 0.6.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)
       '@sentry/node':
         specifier: ^10.33.0
         version: 10.33.0
@@ -847,8 +847,8 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.8
 
-  '@scrymore/scry-sbcov@0.5.0':
-    resolution: {integrity: sha512-OQ1fU55rLrUUnX1UBRnGdVKtYJsO0mYU8/g815pDy4wYpjEu3LTKV1jQKjxYKW5QtYIZzcqrbvbKSEyfZzRagg==}
+  '@scrymore/scry-sbcov@0.6.0':
+    resolution: {integrity: sha512-0q6MXXUl3qFml0I4uI4kTNYLWIIwAREf/SVom0+UIm4oCVxY8IRO5kgSHvalqb+gQClZr40EY3KxcquwEW9x2Q==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     peerDependencies:
@@ -1720,6 +1720,7 @@ packages:
 
   glob@10.5.0:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   glob@13.0.0:
@@ -1728,7 +1729,7 @@ packages:
 
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   globby@11.1.0:
     resolution: {integrity: sha512-jhIXaOzy1sb8IyocaruWSn1TjmnBVs8Ayhcy83rmxNJ8q2uWKCAj3CnJY+KpGSXCueAPc0i05kVvVKtP1t9S3g==}
@@ -4032,7 +4033,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@scrymore/scry-sbcov@0.5.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)':
+  '@scrymore/scry-sbcov@0.6.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)':
     dependencies:
       '@storybook/csf-tools': 8.6.14(storybook@8.6.15(prettier@2.8.8))
       archiver: 7.0.1
