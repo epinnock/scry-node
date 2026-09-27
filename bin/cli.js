@@ -245,6 +245,10 @@ async function recordCiTimings({ apiClient, argv, preUpload, uploadMs, totalTime
         // The build this deploy created, from the presigned-URL response.
         const buildId = uploadResult?.zipUpload?.buildId;
         const sent = await ciTimings.sendCiTimings(apiClient, { project: argv.project, version: argv.version }, buildId, record);
+        if (sent.stored && sent.dropped) {
+            summary.droppedFields = sent.dropped.length;
+            logger.warn(`⚠️  CI timings: stored, but the upload service dropped ${sent.dropped.length} field(s) it would not accept: ${sent.dropped.join(', ')}.`);
+        }
         if (!sent.stored) {
             summary.notStored += 1;
             if (sent.reason === 'not-supported') {
@@ -274,7 +278,9 @@ async function recordCiTimings({ apiClient, argv, preUpload, uploadMs, totalTime
     }
     logger.info(summary.notStored
         ? `CI timings: final record not stored (${summary.notStored}); the build's time is incomplete, the deploy is not affected.`
-        : 'CI timings: stored with the build.');
+        : summary.droppedFields
+            ? `CI timings: stored with the build, ${summary.droppedFields} field(s) dropped by the service.`
+            : 'CI timings: stored with the build.');
     return summary;
 }
 

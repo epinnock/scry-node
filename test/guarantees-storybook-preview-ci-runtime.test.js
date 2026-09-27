@@ -190,6 +190,13 @@ describe('guarantee-7 every build records its CI time; unmeasured = absent and s
     expect(r.code).toBe(0);
   });
 
+  test('guarantee-7 fields the service dropped are named at warn; the rest is stored and the deploy unaffected', async () => {
+    const r = await runDeployerCli({ ciTimings: 'dropped', env: { ...GITHUB_ENV, FAKE_SBCOV_EXECUTION: '1' } });
+    expect(r.out).toContain('CI timings: stored, but the upload service dropped 1 field(s) it would not accept: ci.workflow.');
+    expect(r.out).toContain('CI timings: stored with the build, 1 field(s) dropped by the service.');
+    expect(r.code).toBe(0);
+  });
+
   test('guarantee-7 a 404 "Build not found" from a service that has the route is not called an old service', async () => {
     const r = await runDeployerCli({ ciTimings: 'nobuild', env: { ...GITHUB_ENV, FAKE_SBCOV_EXECUTION: '1' } });
     expect(r.out).toContain('the upload service has the CI-timings route but did not find this build (Build not found');

@@ -10,6 +10,7 @@
 // --ci-timings ok      POST .../builds/:buildId/ci-timings stored (a service with the route)
 // --ci-timings missing that route answers 404 (an upload service older than it)
 // --ci-timings reject  that route answers 400 with the issue paths
+// --ci-timings dropped stored, with ci.workflow dropped by the service
 // --ci-timings nobuild that route answers 404 "Build not found" (route exists, build does not)
 // --actions-api ok        GET /repos/:o/:r/actions/runs/:id/attempts/:n/jobs lists this
 //                         job (runner "stub-runner", started 90 s ago); set GITHUB_API_URL
@@ -62,9 +63,10 @@ function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = '
       }
       if (req.method === 'POST' && /\/builds\/[^/]+\/ci-timings$/.test(entry.path)) {
         if (ciTimings === 'missing') return send(404, { error: 'not found (stub)' });
+        if (ciTimings === 'dropped') return send(200, { success: true, buildId: 'stub-build', buildNumber: 1, stored: ['executeMs'], dropped: ['ci.workflow'] });
         if (ciTimings === 'nobuild') return send(404, { error: 'Build not found for this project, version and build id' });
         if (ciTimings === 'reject') return send(400, { error: 'invalid ciTimings', issues: ['executeMs'] });
-        return send(200, { success: true, stored: true });
+        return send(200, { success: true, buildId: 'stub-build', buildNumber: 1, stored: Object.keys((entry.json && entry.json.ciTimings) || {}), dropped: [] });
       }
       return send(404, { error: 'not found (stub)' });
     });
