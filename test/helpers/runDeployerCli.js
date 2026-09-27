@@ -13,8 +13,8 @@ const CLI = path.join(ROOT, 'bin', 'cli.js');
 const FAKE_SBCOV = path.join(ROOT, 'test', 'fixtures', 'fake-sbcov.js');
 const STORYBOOK_DIR = path.join(ROOT, 'test', 'fixtures', 'storybook-static');
 
-async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', env = {}, configFile = null, command = null } = {}) {
-  const stub = await startStub({ metadata, ciTimings, actionsApi });
+async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', metadataRate = 0, env = {}, configFile = null, command = null } = {}) {
+  const stub = await startStub({ metadata, ciTimings, actionsApi, metadataRate });
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'scry-deployer-e2e-'));
   const argsFile = path.join(cwd, 'sbcov-args.json');
   if (configFile) fs.writeFileSync(path.join(cwd, '.storybook-deployer.json'), configFile);

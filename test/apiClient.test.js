@@ -113,8 +113,9 @@ describe('lib/apiClient', () => {
     expect(apiClient.post).toHaveBeenNthCalledWith(
       2,
       '/upload/p/v/coverage',
-      { ok: true },
-      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
+      // Serialised once so its size sets the timeout (max(60 s, bytes / 100 KB/s)).
+      JSON.stringify({ ok: true }),
+      expect.objectContaining({ headers: { 'Content-Type': 'application/json' }, timeout: 60000 })
     );
 
     fs.unlinkSync(tmpZip);
@@ -151,8 +152,8 @@ describe('lib/apiClient', () => {
     expect(result.coverageUrl).toBe('https://r2.example.com/coverage.json');
     expect(apiClient.post).toHaveBeenCalledWith(
       '/upload/myproj/v1.0.0/coverage',
-      coverageReport,
-      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
+      JSON.stringify(coverageReport),
+      expect.objectContaining({ headers: { 'Content-Type': 'application/json' }, timeout: 60000 })
     );
   });
 

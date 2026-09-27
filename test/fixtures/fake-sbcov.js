@@ -23,6 +23,8 @@
 // (default 1200) and the report carries the same block at execution.timing;
 // FAKE_SBCOV_SLEEP_MS makes the process take that long.
 // FAKE_SBCOV_NO_DURATION=1 leaves execution.summary.duration out of the report.
+// FAKE_SBCOV_PAD_BYTES=<n> adds an incompressible images/_pad.png of n bytes to
+// the archive (a large library's metadata ZIP).
 // FAKE_SBCOV_ARGS_FILE, when set, receives the argv it was called with (JSON).
 const fs = require('fs');
 const path = require('path');
@@ -128,6 +130,8 @@ function writeZip(entries, dropped = []) {
       }), { name: 'sbcov-manifest.json' });
     }
     for (const storyId of entries) a.append(Buffer.from('png'), { name: `images/${storyId}.png` });
+    const pad = Number(process.env.FAKE_SBCOV_PAD_BYTES || 0);
+    if (pad > 0) a.append(require('crypto').randomBytes(pad), { name: 'images/_pad.png', store: true });
     a.finalize();
   });
 }
