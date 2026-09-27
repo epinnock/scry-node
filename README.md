@@ -252,7 +252,7 @@ which does not know the flag, it is not passed and the log says dropped stories 
 Before 0.7.0 the metadata-upload failure, the "not queued" case, an empty archive, a non-zero
 scry-sbcov exit and a workflow that simply forgot `--with-analysis` all ended green (ISSUES.md #50).
 
-### CI time (0.8.0)
+### CI time (0.9.0)
 
 Every deploy measures how much CI time Scry took and records it with the build (ISSUES.md #54:
 a 461-story preview ran for 20 minutes and nothing said so). What you see in the log:

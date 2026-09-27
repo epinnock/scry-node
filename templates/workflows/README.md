@@ -15,7 +15,7 @@ node scripts/regenerate-workflow-templates.js
 
 ## What the workflows do
 
-- Install `@scrymore/scry-deployer@^0.8.0` into `$RUNNER_TEMP/scry`, outside the
+- Install `@scrymore/scry-deployer@^0.9.0` into `$RUNNER_TEMP/scry`, outside the
   checkout, so the repo's own pin or lockfile cannot choose an older deployer
   and a pnpm or yarn `node_modules` is left alone.
 - Install the Playwright browser with **that deployer's own Playwright**
@@ -43,5 +43,5 @@ node scripts/regenerate-workflow-templates.js
 To refresh a project's workflows to the current templates:
 
 ```bash
-npx -y @scrymore/scry-deployer@^0.8.0 update-workflows
+npx -y @scrymore/scry-deployer@^0.9.0 update-workflows
 ```
