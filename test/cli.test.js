@@ -76,7 +76,7 @@ describe('bin/cli helpers', () => {
 
     const res = await resolveCoverage({ coverage: false }, logger);
 
-    expect(res).toEqual({ coverageReport: null, coverageSummary: null, metadataZipPath: null });
+    expect(res).toEqual({ coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null, effectiveMaxDropped: null, maxDroppedUnsupported: false });
   });
 
   test('resolveCoverage() loads report from --coverage-report path', async () => {
@@ -124,5 +124,22 @@ describe('bin/cli helpers', () => {
     expect(res.coverageSummary).toBeTruthy();
     expect(res.metadataZipPath).toBeNull();
     expect(logger.success).toHaveBeenCalled();
+  });
+});
+
+describe('resolveAnalysis (D2: analysis on by default since 0.7.0)', () => {
+  const { resolveAnalysis } = require('../bin/cli.js');
+  test.each([
+    [{}, true, null],
+    [{ withAnalysis: true }, true, null],
+    [{ withAnalysis: true, coverage: false }, true, null],
+    [{ analysis: false }, false, '--no-analysis'],
+    [{ analysis: false, withAnalysis: true }, false, '--no-analysis'],
+    [{ withAnalysis: false }, false, 'withAnalysis is false in .storybook-deployer.json or SCRY_WITH_ANALYSIS'],
+    [{ coverage: false }, false, '--no-coverage (analysis runs inside coverage)'],
+    [{ coverageReport: 'r.json' }, false, '--coverage-report (a supplied report has no screenshots)'],
+    [{ coverageReport: 'r.json', withAnalysis: true }, true, null],
+  ])('%j -> enabled %s', (argv, enabled, optOut) => {
+    expect(resolveAnalysis(argv)).toEqual({ enabled, optOut });
   });
 });

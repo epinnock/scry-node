@@ -74,14 +74,14 @@ describe('runCoverageAnalysis capture forwarding', () => {
       captureScale: '1',
       captureViewport: '1280x720',
     });
-    const cmd = execSync.mock.calls[0][0];
+    const cmd = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(cmd).toMatch(/ --capture-mode viewport --capture-scale 1 --capture-viewport 1280x720$/);
   });
 
   test('passes no capture flag when the project set none, leaving sbcov defaults in charge', async () => {
     const { execSync, runCoverageAnalysis } = setup();
     await runCoverageAnalysis({ storybookDir: './storybook-static', screenshots: true });
-    expect(execSync.mock.calls[0][0]).not.toContain('--capture-');
+    expect(execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c))).not.toContain('--capture-');
   });
 
   test('throws on an invalid setting before running anything, even with failOnThreshold=false', async () => {

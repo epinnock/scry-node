@@ -3,6 +3,8 @@ const {
   sanitizeArgv,
   telemetryDisabled,
   SAFE_ARGV_FIELDS,
+  redactArgv,
+  scrubBreadcrumb,
 } = require('../lib/telemetry.js');
 
 /**
@@ -116,5 +118,48 @@ describe('telemetryDisabled', () => {
   it('honours DO_NOT_TRACK=1', () => {
     process.env.DO_NOT_TRACK = '1';
     expect(telemetryDisabled()).toBe(true);
+  });
+});
+
+// Gap 4 of the 2026-09-26 observability audit: argv went out as a breadcrumb,
+// and breadcrumbs were never scrubbed.
+describe('credential flags, fields and env echoes', () => {
+  const KEY = 'bogus-canary-91ab';
+
+  it.each([
+    [`deploy --api-key ${KEY} --verbose`],
+    [`deploy --api-key=${KEY}`],
+    [`deploy -k ${KEY}`],
+    [`deploy --token ${KEY}`],
+    [`deploy --openai-api-key ${KEY}`],
+    [`{"apiKey":"${KEY}","project":"p"}`],
+    [`{"api-key": "${KEY}"}`],
+    [`SCRY_API_KEY=${KEY} npx scry-deployer`],
+    [`STORYBOOK_DEPLOYER_API_KEY=${KEY}`],
+  ])('scrub masks %s', (input) => {
+    const out = scrub(input);
+    expect(out).not.toContain(KEY);
+    expect(out).toContain('<redacted>');
+  });
+
+  it('redactArgv masks every credential-named field but keeps the rest', () => {
+    const out = redactArgv({
+      _: ['deploy'], apiKey: KEY, 'api-key': KEY, commitApiKey: KEY, jinaApiKey: KEY, k: KEY,
+      project: 'p1', dir: './storybook-static', verbose: true,
+    });
+    expect(JSON.stringify(out)).not.toContain(KEY);
+    expect(out.project).toBe('p1');
+    expect(out.dir).toBe('./storybook-static');
+    expect(out.verbose).toBe(true);
+  });
+
+  it('scrubBreadcrumb cleans the message and nested data', () => {
+    const crumb = scrubBreadcrumb({
+      category: 'console',
+      message: `Received arguments: {"apiKey":"${KEY}"}`,
+      data: { arguments: [`--api-key ${KEY}`], extra: { token: KEY } },
+    });
+    expect(JSON.stringify(crumb)).not.toContain(KEY);
+    expect(crumb.category).toBe('console');
   });
 });
