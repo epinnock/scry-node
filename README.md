@@ -217,6 +217,9 @@ The CLI is configured through a combination of command-line options and environm
 | `--capture-mode` | `SCRY_CAPTURE_MODE`                 | Screenshot framing forwarded to scry-sbcov: `root` (crop to the component) or `viewport`. | No | unset: sbcov decides (`root` from sbcov 0.6) |
 | `--capture-scale` | `SCRY_CAPTURE_SCALE`               | Screenshot device scale factor forwarded to scry-sbcov, `0 < n <= 4`. | No | unset: sbcov decides (`2` from sbcov 0.6) |
 | `--capture-viewport` | `SCRY_CAPTURE_VIEWPORT`         | Browser viewport `WIDTHxHEIGHT` forwarded to scry-sbcov.       | No | unset: sbcov decides (`1280x720`) |
+| -              | `SCRY_CONCURRENCY` (or `concurrency` in `.storybook-deployer.json`) | Stories scry-sbcov renders at once (`--concurrency`, 1-32). Forwarded only to scry-sbcov 0.6+; with an older one the log says it was not applied. | No | unset: sbcov decides (`4` from 0.6) |
+| -              | `SCRY_RENDER_TIMEOUT_MS` (or `renderTimeoutMs`) | How long a story may take to show something before it is written off (`--render-timeout`, 100-600000 ms). sbcov 0.6+ only, as above. | No | unset: sbcov decides (`5000` from 0.6) |
+| -              | `SCRY_EXECUTE_BUDGET_BASE_S`, `SCRY_EXECUTE_BUDGET_PER_STORY_S` | Story execution budget = base + per story × declared stories. Over it: a warning (`::warning::` in GitHub Actions), never a failure. See "CI time". | No | `120` and `0.5` |
 | `--verbose`    | `STORYBOOK_DEPLOYER_VERBOSE`          | Enable verbose logging for debugging purposes.                 | No       | `false`                              |
 | -              | `SCRY_NO_UPDATE_CHECK=1`              | Skip the check against npm `latest` (a one-line warning when this deployer is older; 2 s limit, never fails the deploy). | No | check on |
 | `--help`, `-h` | -                                     | Show the help message.                                       | -        | -                                    |
@@ -248,6 +251,38 @@ which does not know the flag, it is not passed and the log says dropped stories 
 
 Before 0.7.0 the metadata-upload failure, the "not queued" case, an empty archive, a non-zero
 scry-sbcov exit and a workflow that simply forgot `--with-analysis` all ended green (ISSUES.md #50).
+
+### CI time (0.8.0)
+
+Every deploy measures how much CI time Scry took and records it with the build (ISSUES.md #54:
+a 461-story preview ran for 20 minutes and nothing said so). What you see in the log:
+
+```
+Story execution: 461 stories in 3.5 min (4 workers), budget 5.8 min.
+CI time recorded: deployer 4.4 min, job 6.1 min so far (Actions API).
+CI timings: stored with the build.
+```
+
+- **Budget.** Story execution is judged against `120 s + 0.5 s × declared stories`
+  (`SCRY_EXECUTE_BUDGET_BASE_S`, `SCRY_EXECUTE_BUDGET_PER_STORY_S`). Over it, the run gets a
+  `::warning title=Scry story execution over budget::…` annotation naming the time, the budget and
+  where the time went (`timeout 40 s, …`). It is a warning; the exit code does not change.
+- **What is recorded** on the build (`ciTimings`): `analyzeMs`, `executeMs` (from scry-sbcov;
+  `executeSource: "deployer-wall"` when an older sbcov does not report it and the whole sbcov run
+  is used instead), `archiveMs`, `uploadMs`, `deployerTotalMs`, story counts, time lost per reason,
+  sbcov and deployer versions, `runner` (`github-hosted` / `self-hosted` / `unknown`), the Actions
+  run id and attempt, `budgetMs` and `overBudget`. A number that could not be measured is left
+  out, never sent as 0.
+- **Whole-job time** needs `permissions: actions: read` and `GITHUB_TOKEN` in the deploy step (the
+  generated workflows have both). The deployer reads its own job's start time from the Actions API
+  (5 s limit). Without it the log says `CI time recorded: deployer time only (job start unknown:
+  no-token | forbidden | timeout | not-github | …)` and only the deployer's own time is recorded.
+- **Never fails a deploy.** An upload service without the CI-timings route answers 404: the log
+  says `the upload service does not record CI timings yet; not stored` once and the summary line
+  reads `CI timings: final record not stored (1)`. A record the service rejects (400) is a warning
+  with the reason. Exit codes come from indexing only (table above).
+- The generated workflows also set `timeout-minutes: 20` on the Storybook job, so a stuck run
+  stops after 20 minutes instead of GitHub's default 6 hours.
 
 ### Story File Auto-Detection
 
@@ -598,6 +633,10 @@ The PR preview workflow uses these environment variables (configured via GitHub 
 | `SCRY_VIEW_URL` | GitHub Variable | No | Base URL where users view Storybooks (default: `https://view.scrymore.com`) |
 | `SCRY_API_KEY` | GitHub Secret | No | API authentication key (if required) |
 | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | GitHub Variable | No | Set to `false` to disable build processing service integration (enabled by default in generated workflows) |
+| `SCRY_MAX_DROPPED` | GitHub Variable | No | Stories allowed to fail capture before the deploy ends red (default 0) |
+| `SCRY_CONCURRENCY`, `SCRY_RENDER_TIMEOUT_MS` | GitHub Variable | No | Stories rendered at once (default 4) and how long one may take to show something (default 5000 ms); scry-sbcov 0.6+ |
+| `SCRY_EXECUTE_BUDGET_BASE_S`, `SCRY_EXECUTE_BUDGET_PER_STORY_S` | GitHub Variable | No | Story execution budget (default 120 s + 0.5 s per story); over it = a warning, see "CI time" |
+| `GITHUB_TOKEN` | Actions token | No | Posts the PR comment and, with `permissions: actions: read`, lets the deployer record whole-job CI time |
 
 **Important:** `SCRY_API_URL` (where files are uploaded) and `SCRY_VIEW_URL` (where users view the deployed Storybook) are two different URLs:
 - **API URL**: Backend service endpoint (e.g., `https://api.scrymore.com`)

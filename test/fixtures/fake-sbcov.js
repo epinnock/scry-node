@@ -17,6 +17,11 @@
 // Archives carry sbcov-manifest.json {declared, captured, dropped:[...]} like
 // sbcov 0.5.2. FAKE_SBCOV_OLD=1 behaves like sbcov <= 0.5.1: no manifest, no
 // --max-dropped in --help, and "unknown option" (exit 1) if it is passed.
+// FAKE_SBCOV_EXECUTION=1 behaves like sbcov 0.6 (storybook-preview-ci-runtime):
+// the manifest carries an `execution` timing block and --help lists
+// --concurrency / --render-timeout. FAKE_SBCOV_EXECUTE_MS sets its durationMs
+// (default 1200); FAKE_SBCOV_SLEEP_MS makes the process take that long.
+// FAKE_SBCOV_NO_DURATION=1 leaves execution.summary.duration out of the report.
 // FAKE_SBCOV_ARGS_FILE, when set, receives the argv it was called with (JSON).
 const fs = require('fs');
 const path = require('path');
@@ -28,10 +33,17 @@ const opt = (name) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 const OLD = process.env.FAKE_SBCOV_OLD === '1';
+const EXECUTION = !OLD && process.env.FAKE_SBCOV_EXECUTION === '1';
+const EXECUTE_MS = Number(process.env.FAKE_SBCOV_EXECUTE_MS || 1200);
 if (argv.includes('--help')) {
   console.log('Usage: scry-sbcov [options]\n  --output <path>\n  --output-zip <path>\n  --screenshots' +
-    (OLD ? '' : '\n  --max-dropped <n>  exit 3 when more stories than this are dropped'));
+    (OLD ? '' : '\n  --max-dropped <n>  exit 3 when more stories than this are dropped') +
+    (EXECUTION ? '\n  --concurrency <n>  stories rendered at once\n  --render-timeout <ms>  how long a story may take to show something' : ''));
   process.exit(0);
+}
+if (!EXECUTION && (argv.includes('--concurrency') || argv.includes('--render-timeout'))) {
+  console.error(`error: unknown option '${argv.includes('--concurrency') ? '--concurrency' : '--render-timeout'}'`);
+  process.exit(1);
 }
 if (OLD && argv.includes('--max-dropped')) {
   console.error("error: unknown option '--max-dropped'");
@@ -59,7 +71,11 @@ function report({ passed, failures }) {
     },
     execution: {
       executed: true,
-      summary: { total: STORIES.length, passed: passed.length, failed: failures.length, skipped: 0, duration: 1 },
+      summary: {
+        total: STORIES.length, passed: passed.length, failed: failures.length, skipped: 0,
+        // FAKE_SBCOV_NO_DURATION=1: a report that says nothing about time.
+        ...(process.env.FAKE_SBCOV_NO_DURATION === '1' ? {} : { duration: 1 }),
+      },
       stories: [],
       failures: failures.map((storyId) => ({
         storyId,
@@ -88,7 +104,22 @@ function writeZip(entries, dropped = []) {
         captured: entries.length,
         dropped: dropped.map((storyId) => ({ storyId, storyTitle: storyId, reason: 'timeout' })),
         capture: { mode: 'root', viewport: '1280x720', scale: 2, source: 'defaults' },
-        sbcovVersion: '0.5.2-fake',
+        sbcovVersion: EXECUTION ? '0.6.0-fake' : '0.5.2-fake',
+        ...(EXECUTION ? {
+          execution: {
+            durationMs: EXECUTE_MS,
+            concurrency: 4,
+            timeoutMs: 15000,
+            renderTimeoutMs: 5000,
+            declared: STORIES.length,
+            passed: entries.length,
+            failed: STORIES.length - entries.length,
+            timeouts: dropped.length,
+            notIndexed: dropped.length,
+            timeLostMs: dropped.length ? { render_timeout: 5000 * dropped.length } : {},
+            failedTimeShare: dropped.length ? Math.min(1, (5000 * dropped.length) / EXECUTE_MS) : 0,
+          },
+        } : {}),
       }), { name: 'sbcov-manifest.json' });
     }
     for (const storyId of entries) a.append(Buffer.from('png'), { name: `images/${storyId}.png` });
@@ -97,6 +128,8 @@ function writeZip(entries, dropped = []) {
 }
 
 async function main() {
+  const sleepMs = Number(process.env.FAKE_SBCOV_SLEEP_MS || 0);
+  if (sleepMs > 0) await new Promise((r) => setTimeout(r, sleepMs));
   switch (mode) {
     case 'ok':
       fs.writeFileSync(output, JSON.stringify(report({ passed: STORIES, failures: [] })));
