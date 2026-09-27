@@ -24,6 +24,7 @@ const { resolveBuildGitContext } = require('../lib/gitContext.js');
 const { countMetadataEntries, readSbcovManifest, droppedReasons } = require('../lib/metadataArchive.js');
 const { checkForNewerVersion } = require('../lib/versionCheck.js');
 const { version: DEPLOYER_VERSION } = require('../package.json');
+const ciTimings = require('../lib/ciTimings.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -130,7 +131,161 @@ function describeCapture(report) {
     return { total: typeof total === 'number' ? total : null, firstError };
 }
 
+/**
+ * The installed scry-sbcov's version, when the deployer runs its own copy.
+ * Unknown (undefined) under SCRY_SBCOV_CMD or when it cannot be resolved.
+ */
+function installedSbcovVersion() {
+    if (process.env.SCRY_SBCOV_CMD) return undefined;
+    try {
+        return require('@scrymore/scry-sbcov/package.json').version;
+    } catch (_) {
+        return undefined;
+    }
+}
+
+/**
+ * The pre-upload part of the CI timings record (storybook-preview-ci-runtime,
+ * ISSUES.md #54): phases measured so far, story counts, versions, runner, run
+ * ids and the execute budget. Anything not measured is left out, never 0.
+ */
+function buildPreUploadTimings({ coverage, manifest, archiveMs, env = process.env }) {
+    // sbcov 0.7 writes its execution block into the manifest (in the metadata
+    // archive) as `execution`, and into the report at `execution.timing`; the
+    // report is the fallback when there is no archive (execution without screenshots).
+    const fromReport = coverage.coverageReport?.execution?.timing;
+    const execution = manifest?.execution
+        || (fromReport && typeof fromReport === 'object' && !Array.isArray(fromReport) ? fromReport : null);
+    // No report = sbcov crashed or never ran: its wall time is neither an
+    // analysis nor an execute time, so neither is recorded.
+    const executedTimes = !coverage.coverageReport ? {} : ciTimings.splitSbcovTime({
+        sbcovWallMs: coverage.sbcovWallMs ?? null,
+        manifestExecution: execution,
+        report: coverage.coverageReport,
+        executed: Boolean(coverage.executed),
+    });
+    const stories = coverage.executed
+        ? ciTimings.storyCounts({ manifest, manifestExecution: execution, report: coverage.coverageReport })
+        : undefined;
+    const timeLostMs = ciTimings.timeLost(execution);
+    const share = typeof execution?.failedTimeShare === 'number' && execution.failedTimeShare >= 0 && execution.failedTimeShare <= 1
+        ? execution.failedTimeShare
+        : undefined;
+    const concurrency = Number.isInteger(execution?.concurrency) && execution.concurrency > 0 ? execution.concurrency : undefined;
+
+    let budget = null;
+    if (executedTimes.executeMs !== undefined) {
+        budget = ciTimings.resolveBudget({ declared: stories?.declared ?? null, env });
+    }
+    const overBudget = budget && budget.budgetMs !== null ? executedTimes.executeMs > budget.budgetMs : undefined;
+
+    const record = ciTimings.compact({
+        ...executedTimes,
+        archiveMs,
+        stories,
+        timeLostMs,
+        failedTimeShare: share,
+        concurrency,
+        sbcovVersion: typeof manifest?.sbcovVersion === 'string' ? manifest.sbcovVersion.slice(0, 40) : installedSbcovVersion(),
+        deployerVersion: DEPLOYER_VERSION,
+        runner: ciTimings.detectRunner(env),
+        ci: ciTimings.readCiContext(env) || undefined,
+        budgetMs: budget?.budgetMs ?? undefined,
+        overBudget,
+    });
+    return { record, budget };
+}
+
+/**
+ * The duration line, and the budget warning when story execution took longer
+ * than its budget (G6). A warning, never a failure: a slow run is information.
+ */
+function reportExecutionTime(record, budget, logger, env = process.env) {
+    if (budget) {
+        for (const w of budget.warnings) logger.warn(`⚠️  ${w}.`);
+    }
+    if (record.executeMs === undefined) return;
+    const fmt = ciTimings.formatDuration;
+    const n = record.stories?.declared;
+    const stories = typeof n === 'number' ? `${n} ${n === 1 ? 'story' : 'stories'}` : 'stories';
+    const workers = record.concurrency ? ` (${record.concurrency} ${record.concurrency === 1 ? 'worker' : 'workers'})` : '';
+    const source = record.executeSource === 'deployer-wall' ? ' [sbcov run wall time; this scry-sbcov does not report execution time]' : '';
+    const budgetText = record.budgetMs !== undefined ? `, budget ${fmt(record.budgetMs)}` : ', no budget (story count unknown)';
+    const lost = ciTimings.describeTimeLost(record.timeLostMs);
+    logger.info(`Story execution: ${stories} in ${fmt(record.executeMs)}${workers}${budgetText}${lost ? `; time lost: ${lost}` : ''}${source}.`);
+
+    if (record.overBudget) {
+        const formula = `${budget.baseS} s + ${budget.perStoryS} s × ${typeof n === 'number' ? n : '?'} stories`;
+        const detail = `Executing ${stories} took ${fmt(record.executeMs)}, over the ${fmt(record.budgetMs)} budget (${formula})` +
+            (lost ? `. Time lost: ${lost}` : '') +
+            '. Set SCRY_EXECUTE_BUDGET_BASE_S / SCRY_EXECUTE_BUDGET_PER_STORY_S to change the budget.';
+        if (env.GITHUB_ACTIONS === 'true') {
+            // A workflow command must start the line, on stdout.
+            process.stdout.write(`::warning title=Scry story execution over budget::${detail.replace(/\r?\n/g, ' ')}\n`);
+        }
+        logger.warn(`⚠️  Story execution took ${fmt(record.executeMs)}, over its ${fmt(record.budgetMs)} budget (${formula}).`);
+    }
+}
+
+/**
+ * Finish the record (upload, total, whole-job time) and send it to the
+ * ci-timings route. Never throws and never changes the exit code; every way it
+ * can fall short is said once, and counted in the summary line.
+ */
+async function recordCiTimings({ apiClient, argv, preUpload, uploadMs, totalTimer, uploadResult, logger }) {
+    const summary = { notStored: 0 };
+    try {
+        const job = await ciTimings.fetchJobElapsed();
+        const record = ciTimings.compact({
+            ...preUpload,
+            uploadMs,
+            ...job,
+            deployerTotalMs: totalTimer.stop(),
+        });
+        // The build this deploy created, from the presigned-URL response.
+        const buildId = uploadResult?.zipUpload?.buildId;
+        const sent = await ciTimings.sendCiTimings(apiClient, { project: argv.project, version: argv.version }, buildId, record);
+        if (sent.stored && sent.dropped) {
+            summary.droppedFields = sent.dropped.length;
+            logger.warn(`⚠️  CI timings: stored, but the upload service dropped ${sent.dropped.length} field(s) it would not accept: ${sent.dropped.join(', ')}.`);
+        }
+        if (!sent.stored) {
+            summary.notStored += 1;
+            if (sent.reason === 'not-supported') {
+                logger.warn('⚠️  CI timings: the upload service does not record CI timings yet; not stored.');
+            } else if (sent.reason === 'rejected') {
+                logger.warn(`⚠️  CI timings: the upload service rejected the CI timings (${sent.detail}); not stored.`);
+            } else if (sent.reason === 'build-not-found') {
+                logger.warn(`⚠️  CI timings: the upload service has the CI-timings route but did not find this build (${sent.detail}); not stored.`);
+            } else if (sent.reason === 'no-build-id') {
+                logger.warn('⚠️  CI timings: the upload service returned no build id, so the final record could not be sent; not stored.');
+            } else {
+                logger.warn(`⚠️  CI timings: could not reach the upload service (${sent.detail}); not stored.`);
+            }
+        }
+        const fmt = ciTimings.formatDuration;
+        // "recorded" only when the service kept it; otherwise it was measured and printed here.
+        const verb = sent.stored ? 'CI time recorded' : 'CI time measured (not stored)';
+        if (record.jobTimeSource === 'actions-api') {
+            logger.info(`${verb}: deployer ${fmt(record.deployerTotalMs)}, job ${fmt(record.jobElapsedMs)} so far (Actions API).`);
+        } else {
+            logger.info(`${verb}: deployer time only (job start unknown: ${record.jobTimeReason}). Deployer ${fmt(record.deployerTotalMs)}.`);
+        }
+    } catch (err) {
+        // Nothing in here may fail a deploy; say what did not happen.
+        summary.notStored += 1;
+        logger.warn(`⚠️  CI timings: not recorded (${err.message}).`);
+    }
+    logger.info(summary.notStored
+        ? `CI timings: final record not stored (${summary.notStored}); the build's time is incomplete, the deploy is not affected.`
+        : summary.droppedFields
+            ? `CI timings: stored with the build, ${summary.droppedFields} field(s) dropped by the service.`
+            : 'CI timings: stored with the build.');
+    return summary;
+}
+
 async function runDeployment(argv) {
+    const totalTimer = ciTimings.startTimer();
     const logger = createLogger(argv);
     logger.info('🚀 Starting deployment...');
     // Credentials masked: this line is also a Sentry breadcrumb.
@@ -162,6 +317,13 @@ async function runDeployment(argv) {
         let metadataToSend = metadataZipPath;
         let emptyArchive = null;
         let dropped = null;
+        let sbcovManifest = null;
+        if (coverage.executionUnsupported && coverage.executionUnsupported.length) {
+            logger.warn(
+                `⚠️  The installed scry-sbcov does not support ${coverage.executionUnsupported.join(' / ')}, so SCRY_CONCURRENCY /\n` +
+                '   SCRY_RENDER_TIMEOUT_MS were not applied. Upgrade @scrymore/scry-sbcov to 0.7 or later.'
+            );
+        }
         if (coverage.maxDroppedUnsupported) {
             logger.warn(
                 '⚠️  The installed scry-sbcov does not support --max-dropped, so stories that fail to\n' +
@@ -176,6 +338,7 @@ async function runDeployment(argv) {
             if (manifestError) {
                 logger.warn(`⚠️  ${manifestError}; dropped stories cannot be counted for this build.`);
             } else if (manifest) {
+                sbcovManifest = manifest;
                 const allowed = coverage.effectiveMaxDropped ?? 0;
                 const n = manifest.dropped.length;
                 const reasons = n ? ` (${droppedReasons(manifest.dropped)})` : '';
@@ -199,13 +362,18 @@ async function runDeployment(argv) {
 
         // 1. Archive only the static Storybook files.
         logger.info(`1/3: Zipping directory '${argv.dir}'...`);
+        const archiveTimer = ciTimings.startTimer();
         await zipDirectory(argv.dir, outPath);
+        const archiveMs = archiveTimer.stop();
         logger.success(`✅ Archive created: ${outPath}`);
         logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
 
         // 2. Upload Storybook ZIP + coverage + metadata ZIP (if present).
         logger.info('2/3: Uploading to deployment service...');
         const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
+        // CI timings, pre-upload part: sent with the request that creates the build.
+        const { record: preUpload, budget } = buildPreUploadTimings({ coverage, manifest: sbcovManifest, archiveMs });
+        reportExecutionTime(preUpload, budget, logger);
         // Which commit this build is of. `version` is a PR number, a branch, a
         // tag or a short SHA depending on the CI event, so it identifies a
         // deploy but never a commit — without this a search result cannot say
@@ -216,6 +384,7 @@ async function runDeployment(argv) {
         } else {
             logger.debug('No git context available; build will record no commit SHA');
         }
+        const uploadTimer = ciTimings.startTimer();
         const uploadResult = await uploadBuild(
             apiClient,
             {
@@ -227,12 +396,17 @@ async function runDeployment(argv) {
                 coverageReport,
                 metadataZipPath: metadataToSend,
                 gitContext,
+                ciTimings: preUpload,
             }
         );
+        const uploadMs = uploadTimer.stop();
         logger.success('✅ Archive uploaded.');
         logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
 
         await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
+
+        // CI timings, final record. Never fails the deploy (G7).
+        await recordCiTimings({ apiClient, argv, preUpload, uploadMs, totalTimer, uploadResult, logger });
 
         // Report only what actually completed. Uploading is synchronous;
         // indexing is not. A build can fail in the queue seconds after this
@@ -618,7 +792,7 @@ async function main() {
                 const logger = createLogger(argv);
 
                 // Capture settings: CLI flag > env > .storybook-deployer.json; unset = sbcov decides.
-                const { captureMode, captureScale, captureViewport, maxDropped } = loadConfig(argv);
+                const { captureMode, captureScale, captureViewport, maxDropped, concurrency, renderTimeoutMs } = loadConfig(argv);
                 const result = await runCoverageAnalysis({
                     storybookDir: argv.dir,
                     baseBranch: argv.coverageBase || 'main',
@@ -629,9 +803,14 @@ async function main() {
                     captureMode,
                     captureScale,
                     captureViewport,
+                    concurrency,
+                    renderTimeoutMs,
                     maxDropped,
                 });
                 const report = result.report;
+                if (result.executionUnsupported && result.executionUnsupported.length) {
+                    logger.warn(`⚠️  The installed scry-sbcov does not support ${result.executionUnsupported.join(' / ')}; SCRY_CONCURRENCY / SCRY_RENDER_TIMEOUT_MS not applied.`);
+                }
 
                 if (result.sbcovFailure) {
                     logger.error(`Coverage: ${result.sbcovFailure.reason}${report ? ` (report written to ${argv.output})` : ''}`);
@@ -835,7 +1014,7 @@ async function resolveCoverage(argv, logger) {
     const enabled = argv.coverage !== false;
     if (!enabled) {
         logger.info('Coverage: disabled (--no-coverage)');
-        return { coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null, effectiveMaxDropped: null, maxDroppedUnsupported: false };
+        return { coverageReport: null, coverageSummary: null, metadataZipPath: null, sbcovFailure: null, effectiveMaxDropped: null, maxDroppedUnsupported: false, sbcovWallMs: null, executed: false, executionUnsupported: [] };
     }
 
     try {
@@ -844,6 +1023,9 @@ async function resolveCoverage(argv, logger) {
         let sbcovFailure = null;
         let effectiveMaxDropped = null;
         let maxDroppedUnsupported = false;
+        let sbcovWallMs = null;
+        let executed = false;
+        let executionUnsupported = [];
 
         if (argv.coverageReport) {
             logger.info(`Coverage: using existing report at ${argv.coverageReport}`);
@@ -864,9 +1046,14 @@ async function resolveCoverage(argv, logger) {
                 captureMode: argv.captureMode,
                 captureScale: argv.captureScale,
                 captureViewport: argv.captureViewport,
+                concurrency: argv.concurrency,
+                renderTimeoutMs: argv.renderTimeoutMs,
                 maxDropped: argv.maxDropped,
             });
             report = result.report;
+            sbcovWallMs = result.sbcovWallMs ?? null;
+            executed = Boolean(result.executed);
+            executionUnsupported = result.executionUnsupported || [];
             metadataZipPath = result.metadataZipPath;
             sbcovFailure = result.sbcovFailure || null;
             effectiveMaxDropped = result.effectiveMaxDropped ?? null;
@@ -881,7 +1068,7 @@ async function resolveCoverage(argv, logger) {
             logger.info('Coverage: no report generated (tool failed or report shape unexpected)');
         }
 
-        return { coverageReport: report, coverageSummary: summary, metadataZipPath, sbcovFailure, effectiveMaxDropped, maxDroppedUnsupported };
+        return { coverageReport: report, coverageSummary: summary, metadataZipPath, sbcovFailure, effectiveMaxDropped, maxDroppedUnsupported, sbcovWallMs, executed, executionUnsupported };
     } catch (err) {
         logger.error(`Coverage: failed (${err.message})`);
         throw err;
@@ -939,6 +1126,9 @@ module.exports = {
     runAnalysis,
     resolveCoverage,
     resolveAnalysis,
+    buildPreUploadTimings,
+    reportExecutionTime,
+    recordCiTimings,
     reportIndexingOutcome,
     buildDeployResult,
     logUploadLinks,

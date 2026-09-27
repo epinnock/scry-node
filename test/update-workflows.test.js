@@ -31,7 +31,7 @@ describe('scry-deployer update-workflows', () => {
     const main = fs.readFileSync(path.join(dir, '.github/workflows/deploy-storybook.yml'), 'utf8');
     const pr = fs.readFileSync(path.join(dir, '.github/workflows/deploy-pr-preview.yml'), 'utf8');
     for (const y of [main, pr]) {
-      expect(y).toContain('@scrymore/scry-deployer@^0.7.0');
+      expect(y).toContain(`@scrymore/scry-deployer@${require('../lib/templates.js').DEPLOYER_RANGE}`);
       expect(y).toContain('npx --no-install playwright install --with-deps chromium-headless-shell');
       expect(y).toContain('pnpm run build-storybook');
       expect(y).not.toMatch(/npx @scrymore\/scry-deployer/);

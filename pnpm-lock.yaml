@@ -12,8 +12,8 @@ importers:
         specifier: ^20.0.0
         version: 20.1.2
       '@scrymore/scry-sbcov':
-        specifier: ^0.6.0
-        version: 0.6.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)
+        specifier: ^0.7.0
+        version: 0.7.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)
       '@sentry/node':
         specifier: ^10.33.0
         version: 10.33.0
@@ -847,8 +847,8 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.8
 
-  '@scrymore/scry-sbcov@0.6.0':
-    resolution: {integrity: sha512-0q6MXXUl3qFml0I4uI4kTNYLWIIwAREf/SVom0+UIm4oCVxY8IRO5kgSHvalqb+gQClZr40EY3KxcquwEW9x2Q==}
+  '@scrymore/scry-sbcov@0.7.0':
+    resolution: {integrity: sha512-pK6ZIw+Nuo6m4UxjVchcQg6SPBzIA5CdMVq0gXdmX5Z2VnTsGjNgUEj7VTEvXwEZFCRTWz1sggJy0lFWsVgrXQ==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     peerDependencies:
@@ -4033,7 +4033,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@scrymore/scry-sbcov@0.6.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)':
+  '@scrymore/scry-sbcov@0.7.0(storybook@8.6.15(prettier@2.8.8))(typescript@5.9.3)':
     dependencies:
       '@storybook/csf-tools': 8.6.14(storybook@8.6.15(prettier@2.8.8))
       archiver: 7.0.1

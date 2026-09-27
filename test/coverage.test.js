@@ -83,6 +83,10 @@ describe('lib/coverage', () => {
       sbcovFailure: null,
       effectiveMaxDropped: null,
       maxDroppedUnsupported: false,
+      // CI timings (ISSUES.md #54): the sbcov run's wall time, measured.
+      sbcovWallMs: expect.any(Number),
+      executed: false,
+      executionUnsupported: [],
     });
     expect(fs.existsSync(outPath)).toBe(false);
 
@@ -142,6 +146,9 @@ describe('lib/coverage', () => {
       sbcovFailure: { exitCode: null, signal: null, reason: 'scry-sbcov could not be run: tool failed' },
       effectiveMaxDropped: null,
       maxDroppedUnsupported: false,
+      sbcovWallMs: expect.any(Number),
+      executed: false,
+      executionUnsupported: [],
     });
   });
 

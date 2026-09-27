@@ -13,8 +13,8 @@ const CLI = path.join(ROOT, 'bin', 'cli.js');
 const FAKE_SBCOV = path.join(ROOT, 'test', 'fixtures', 'fake-sbcov.js');
 const STORYBOOK_DIR = path.join(ROOT, 'test', 'fixtures', 'storybook-static');
 
-async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', env = {}, configFile = null, command = null } = {}) {
-  const stub = await startStub({ metadata });
+async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', env = {}, configFile = null, command = null } = {}) {
+  const stub = await startStub({ metadata, ciTimings, actionsApi });
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'scry-deployer-e2e-'));
   const argsFile = path.join(cwd, 'sbcov-args.json');
   if (configFile) fs.writeFileSync(path.join(cwd, '.storybook-deployer.json'), configFile);
@@ -28,7 +28,7 @@ async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', en
     SCRY_SBCOV_CMD: `node ${FAKE_SBCOV}`,
     FAKE_SBCOV_MODE: sbcovMode,
     FAKE_SBCOV_ARGS_FILE: argsFile,
-    ...env,
+    ...(typeof env === 'function' ? env(stub.url) : env),
   };
   const fullArgs = command === 'coverage'
     ? [CLI, 'coverage', '--dir', STORYBOOK_DIR, '--output', path.join(cwd, 'report.json'), ...args]

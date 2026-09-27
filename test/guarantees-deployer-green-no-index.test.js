@@ -45,7 +45,7 @@ describe('deployer-green-no-index guarantees', () => {
     test.each(cases)('%s (%s)', (gen, pm) => {
       const yml = templates[gen]('p', 'https://api', pm, 'build-storybook');
 
-      const install = yml.indexOf('npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@^0.7.0');
+      const install = yml.indexOf('npm i --no-save --no-audit --no-fund --ignore-scripts --prefix "$RUNNER_TEMP/scry" @scrymore/scry-deployer@' + templates.DEPLOYER_RANGE);
       const browser = yml.indexOf('npx --no-install playwright install --with-deps chromium-headless-shell');
       const deploy = yml.indexOf('"$RUNNER_TEMP/scry/node_modules/.bin/scry-deployer" \\');
 
