@@ -7,6 +7,10 @@
 // --metadata ok        metadata archive accepted and queued (build #1)
 // --metadata reject    metadata archive rejected with HTTP 500
 // --metadata notqueued accepted but not queued
+// --metadata hang      metadata POST is read but never answered (client times out)
+// --metadata hang-once the first metadata POST hangs, the next is accepted
+// --metadata reject400 metadata archive rejected with HTTP 400 (not worth retrying)
+// --metadata-rate <B/s> read metadata request bodies at this rate (a slow uplink)
 // --ci-timings ok      POST .../builds/:buildId/ci-timings stored (a service with the route)
 // --ci-timings missing that route answers 404 (an upload service older than it)
 // --ci-timings reject  that route answers 400 with the issue paths
@@ -21,14 +25,24 @@
 // metadata archive was sent at all.
 const http = require('http');
 
-function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', log = () => {} } = {}) {
+function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', metadataRate = 0, log = () => {} } = {}) {
   const requests = [];
+  let metadataCalls = 0;
   const server = http.createServer((req, res) => {
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
+    const started = Date.now();
+    const throttle = metadataRate > 0 && req.method === 'POST' && /\/metadata(\?|$)/.test(req.url);
+    req.on('data', (c) => {
+      chunks.push(c);
+      if (throttle) {
+        // Read no faster than metadataRate: TCP backpressure slows the sender.
+        req.pause();
+        setTimeout(() => req.resume(), (c.length / metadataRate) * 1000);
+      }
+    });
     req.on('end', () => {
       const body = Buffer.concat(chunks);
-      const entry = { method: req.method, path: req.url.split('?')[0], bytes: body.length };
+      const entry = { method: req.method, path: req.url.split('?')[0], bytes: body.length, ms: Date.now() - started };
       if (/json/.test(String(req.headers['content-type'] || ''))) {
         try { entry.json = JSON.parse(body.toString('utf8')); } catch (_) { entry.json = null; }
       }
@@ -45,6 +59,9 @@ function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = '
       if (req.method === 'PUT' && entry.path.startsWith('/put/')) return send(200, {});
       if (req.method === 'POST' && /\/coverage$/.test(entry.path)) return send(200, { success: true, buildId: 'stub-build' });
       if (req.method === 'POST' && /\/metadata$/.test(entry.path)) {
+        metadataCalls += 1;
+        if (metadata === 'hang' || (metadata === 'hang-once' && metadataCalls === 1)) return undefined;
+        if (metadata === 'reject400') return send(400, { error: 'Empty body (stub)' });
         if (metadata === 'reject') return send(500, { error: 'metadata store unavailable (stub)' });
         if (metadata === 'notqueued') return send(200, { success: true, queued: false, buildNumber: 1 });
         return send(200, { success: true, queued: true, buildNumber: 1, zipKey: 'stub/metadata.zip' });
@@ -73,7 +90,7 @@ function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = '
   });
   return new Promise((resolve) => {
     server.listen(port, '127.0.0.1', () => {
-      resolve({ server, requests, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) });
+      resolve({ server, requests, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => { server.close(r); server.closeAllConnections?.(); }) });
     });
   });
 }
@@ -83,7 +100,7 @@ if (require.main === module) {
     const i = process.argv.indexOf(name);
     return i >= 0 ? process.argv[i + 1] : dflt;
   };
-  startStub({ port: Number(arg('--port', '8799')), metadata: arg('--metadata', 'ok'), ciTimings: arg('--ci-timings', 'ok'), actionsApi: arg('--actions-api', 'ok'), log: (l) => console.log(l) })
+  startStub({ port: Number(arg('--port', '8799')), metadata: arg('--metadata', 'ok'), metadataRate: Number(arg('--metadata-rate', '0')), ciTimings: arg('--ci-timings', 'ok'), actionsApi: arg('--actions-api', 'ok'), log: (l) => console.log(l) })
     .then((s) => console.log(`stub upload service on ${s.url} (metadata: ${arg('--metadata', 'ok')})`));
 }
 
