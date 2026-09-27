@@ -400,7 +400,15 @@ async function runDeployment(argv) {
             }
         );
         const uploadMs = uploadTimer.stop();
-        logger.success('✅ Archive uploaded.');
+        // A metadata upload that failed is the essential part of this deploy
+        // failing: no success line may follow it (RCA 2: the log printed
+        // "Archive uploaded" and "Upload complete" after the timeout).
+        const metadataFailed = uploadResult?.metadataUpload?.success === false;
+        if (metadataFailed) {
+            logger.info('Storybook ZIP uploaded; the metadata upload failed (see above and below).');
+        } else {
+            logger.success('✅ Archive uploaded.');
+        }
         logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
 
         await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
@@ -414,8 +422,8 @@ async function runDeployment(argv) {
         // credential — and this command previously printed
         // "Deployment successful" over it, sending people looking for the
         // cause three steps downstream (ISSUES.md #4).
-        logger.success('\n✅ Upload complete.');
-        logUploadLinks(argv, coverageSummary, uploadResult, logger);
+        if (!metadataFailed) logger.success('\n✅ Upload complete.');
+        logUploadLinks(argv, coverageSummary, uploadResult, logger, { indexed: !metadataFailed });
 
         reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, dropped, logger });
 
@@ -475,9 +483,15 @@ function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbc
         // check tested only that the object existed, printed "uploaded but
         // not queued" and exited 0.
         process.exitCode = 1;
+        const zip = uploadResult?.zipUpload || {};
+        const build = zip.buildId
+            ? `Build ${zip.buildId}${zip.buildNumber !== undefined ? ` (#${zip.buildNumber})` : ''}`
+            : 'The build';
         logger.error(
             `\n❌ The metadata upload failed (${metadataUpload.error || 'no reason given'}), so NOTHING WILL BE INDEXED.\n` +
-            HOSTED_NOT_SEARCHABLE
+            HOSTED_NOT_SEARCHABLE + '\n' +
+            `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
+            '   so it will not show as failed. Re-run this job to index it.'
         );
         return;
     }
@@ -1102,10 +1116,14 @@ function buildDeployResult(argv, coverageSummary, uploadResult) {
     };
 }
 
-function logUploadLinks(argv, coverageSummary, uploadResult, logger) {
+function logUploadLinks(argv, coverageSummary, uploadResult, logger, { indexed = true } = {}) {
     const deployResult = buildDeployResult(argv, coverageSummary, uploadResult);
 
-    logger.success('\n✅ Storybook hosted.\n');
+    if (indexed) {
+        logger.success('\n✅ Storybook hosted.\n');
+    } else {
+        logger.info('\nStorybook hosted (browsable, NOT indexed):\n');
+    }
     logger.info(`📖 Storybook: ${deployResult.viewUrl}`);
     if (deployResult.coverageUrl) {
         logger.info(`📊 Coverage:  ${deployResult.coverageUrl}`);
