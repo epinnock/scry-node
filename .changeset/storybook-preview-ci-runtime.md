@@ -13,7 +13,8 @@ What you see now:
 - The build records its CI timings (analyze, execute, archive, upload and deployer total; story counts; time lost per reason; sbcov and deployer versions; runner kind; Actions run id and attempt; budget). Anything that could not be measured is left out, never sent as 0. The first part rides on the existing build request; the final record goes to a new upload-service route. An upload service without that route is told apart from an error: `the upload service does not record CI timings yet; not stored`, once, and the deploy result is unchanged.
 - Whole-job time, when the job may read Actions (`permissions: actions: read`) and `GITHUB_TOKEN` is passed: `CI time recorded: deployer 4.4 min, job 6.1 min so far (Actions API).` Otherwise `deployer time only (job start unknown: <reason>)`. This never fails a deploy.
 - `SCRY_CONCURRENCY` and `SCRY_RENDER_TIMEOUT_MS` (or `concurrency` / `renderTimeoutMs` in `.storybook-deployer.json`) are forwarded to scry-sbcov 0.6+ as `--concurrency` / `--render-timeout`; with an older scry-sbcov they are not sent and the log says so.
-- Generated workflows install `@scrymore/scry-deployer@^0.8.0`, set `timeout-minutes: 20` on the Storybook job and grant `actions: read` (with `contents: read`).
+- Generated workflows install `@scrymore/scry-deployer@^0.8.0`, set `timeout-minutes: 20` on the Storybook job and grant `actions: read`. The push workflow had no `permissions` block before; the one it has now lists `contents: read`, `actions: read` and `packages: read`, and every other scope (for example write access your own added steps relied on) is dropped: add what your steps need.
+- `timeout-minutes: 20` assumes scry-sbcov 0.6 (four stories at a time, 5 s render limit), which 0.8.0 installs. If you run an older scry-sbcov (`SCRY_SBCOV_CMD`, or your own pin) on a large Storybook, one run can take longer than 20 minutes and be stopped: raise the limit in your workflow.
 
 What you must do:
 

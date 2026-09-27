@@ -186,7 +186,8 @@ describe('lib/coverage runCoverageAnalysis() against the fake sbcov (in process)
       report: null, metadataZipPath: null,
       sbcovFailure: { exitCode: 2, signal: null, reason: 'scry-sbcov rejected the capture config (exit 2)' },
       effectiveMaxDropped: 0, maxDroppedUnsupported: false,
-      sbcovWallMs: expect.any(Number), executed: true, executionUnsupported: [],
+      // exit 2 wrote no report: no stories ran, so no execute time is claimed.
+      sbcovWallMs: expect.any(Number), executed: false, executionUnsupported: [],
     });
   });
 

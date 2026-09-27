@@ -45,7 +45,7 @@ describe('regression-storybook-preview-ci-runtime', () => {
     expect(presign.json.ciTimings).toMatchObject({ executeMs: 60, executeSource: 'sbcov', budgetMs: 3, overBudget: true });
 
     // ...and the final record goes to the ci-timings route.
-    const final = r.requests.find((q) => q.method === 'POST' && /\/builds\/1\/ci-timings$/.test(q.path));
+    const final = r.requests.find((q) => q.method === 'POST' && /\/builds\/stub-build\/ci-timings$/.test(q.path));
     expect(final).toBeDefined();
     expect(final.json.ciTimings.deployerTotalMs).toBeGreaterThan(0);
 

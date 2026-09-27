@@ -150,8 +150,15 @@ function installedSbcovVersion() {
  * ids and the execute budget. Anything not measured is left out, never 0.
  */
 function buildPreUploadTimings({ coverage, manifest, archiveMs, env = process.env }) {
-    const execution = manifest?.execution || null;
-    const executedTimes = ciTimings.splitSbcovTime({
+    // sbcov 0.6 writes its execution block into the manifest (in the metadata
+    // archive) and the same block into the report at execution.execution; the
+    // report is the fallback when there is no archive (execution without screenshots).
+    const fromReport = coverage.coverageReport?.execution?.execution;
+    const execution = manifest?.execution
+        || (fromReport && typeof fromReport === 'object' && !Array.isArray(fromReport) ? fromReport : null);
+    // No report = sbcov crashed or never ran: its wall time is neither an
+    // analysis nor an execute time, so neither is recorded.
+    const executedTimes = !coverage.coverageReport ? {} : ciTimings.splitSbcovTime({
         sbcovWallMs: coverage.sbcovWallMs ?? null,
         manifestExecution: execution,
         report: coverage.coverageReport,
@@ -235,16 +242,19 @@ async function recordCiTimings({ apiClient, argv, preUpload, uploadMs, totalTime
             ...job,
             deployerTotalMs: totalTimer.stop(),
         });
-        const buildNumber = uploadResult?.zipUpload?.buildNumber ?? uploadResult?.metadataUpload?.buildNumber;
-        const sent = await ciTimings.sendCiTimings(apiClient, { project: argv.project, version: argv.version }, buildNumber, record);
+        // The build this deploy created, from the presigned-URL response.
+        const buildId = uploadResult?.zipUpload?.buildId;
+        const sent = await ciTimings.sendCiTimings(apiClient, { project: argv.project, version: argv.version }, buildId, record);
         if (!sent.stored) {
             summary.notStored += 1;
             if (sent.reason === 'not-supported') {
                 logger.warn('⚠️  CI timings: the upload service does not record CI timings yet; not stored.');
             } else if (sent.reason === 'rejected') {
                 logger.warn(`⚠️  CI timings: the upload service rejected the CI timings (${sent.detail}); not stored.`);
-            } else if (sent.reason === 'no-build-number') {
-                logger.warn('⚠️  CI timings: the upload service returned no build number, so the final record could not be sent; not stored.');
+            } else if (sent.reason === 'build-not-found') {
+                logger.warn(`⚠️  CI timings: the upload service has the CI-timings route but did not find this build (${sent.detail}); not stored.`);
+            } else if (sent.reason === 'no-build-id') {
+                logger.warn('⚠️  CI timings: the upload service returned no build id, so the final record could not be sent; not stored.');
             } else {
                 logger.warn(`⚠️  CI timings: could not reach the upload service (${sent.detail}); not stored.`);
             }

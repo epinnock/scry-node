@@ -18,6 +18,7 @@ const {
   sendCiTimings,
   detectRunner,
   readCiContext,
+  safeLabel,
   splitSbcovTime,
   storyCounts,
   timeLost,
@@ -183,6 +184,28 @@ describe('guarantee-7 every build records its CI time; unmeasured = absent and s
     expect(r.code).toBe(0);
   });
 
+  test('guarantee-7 the final record is keyed by the build id the presigned response returned', async () => {
+    const r = await runDeployerCli({ env: { ...GITHUB_ENV, FAKE_SBCOV_EXECUTION: '1' } });
+    expect(r.requests.some((q) => q.method === 'POST' && q.path === '/upload/fixture/main/builds/stub-build/ci-timings')).toBe(true);
+    expect(r.code).toBe(0);
+  });
+
+  test('guarantee-7 a 404 "Build not found" from a service that has the route is not called an old service', async () => {
+    const r = await runDeployerCli({ ciTimings: 'nobuild', env: { ...GITHUB_ENV, FAKE_SBCOV_EXECUTION: '1' } });
+    expect(r.out).toContain('the upload service has the CI-timings route but did not find this build (Build not found');
+    expect(r.out).not.toContain('does not record CI timings yet');
+    expect(r.out).toContain('CI timings: final record not stored (1)');
+    expect(r.code).toBe(0);
+  });
+
+  test('guarantee-7 an sbcov that crashed ran no stories: no execute or analyze time is made up', async () => {
+    const r = await runDeployerCli({ sbcovMode: 'crash', env: { ...GITHUB_ENV } });
+    const t = finalBody(r).ciTimings;
+    for (const k of ['analyzeMs', 'executeMs', 'executeSource', 'budgetMs', 'overBudget', 'stories']) expect(t).not.toHaveProperty(k);
+    expect(r.out).not.toContain('Story execution:');
+    expect(r.code).toBe(1);
+  });
+
   test('guarantee-7 a record the service rejects (400) is a warning with the reason, never a failed deploy', async () => {
     const r = await runDeployerCli({ ciTimings: 'reject', env: { ...GITHUB_ENV, FAKE_SBCOV_EXECUTION: '1' } });
     expect(r.out).toContain('upload service rejected the CI timings (executeMs); not stored');
@@ -246,6 +269,14 @@ describe('guarantee-7 units', () => {
     expect(detectRunner({ RUNNER_ENVIRONMENT: 'weird' })).toBe('unknown');
   });
 
+  test('workflow and job names are cleaned to what the service accepts, not dropped whole', () => {
+    expect(readCiContext({ GITHUB_ACTIONS: 'true', GITHUB_WORKFLOW: "Build & Deploy, it's CI", GITHUB_JOB: 'déploy' }))
+      .toEqual({ provider: 'github', workflow: 'Build - Deploy- it-s CI', job: 'd-ploy' });
+    for (const v of ["Build & Deploy, it's CI", 'déploy', 'a;b|c']) {
+      expect(safeLabel(v)).toMatch(/^[\w .:@+/()-]+$/);
+    }
+  });
+
   test('run ids are bounded and malformed ones are left out', () => {
     expect(readCiContext({})).toBeNull();
     expect(readCiContext({ GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: 'abc', GITHUB_RUN_ATTEMPT: '0', GITHUB_WORKFLOW: 'x'.repeat(500) }))
@@ -289,8 +320,9 @@ describe('guarantee-7 units', () => {
 
   test('an unreachable service or a missing build number is reported, never thrown', async () => {
     const failing = { post: async () => { const e = new Error('connect ECONNREFUSED'); e.code = 'ECONNREFUSED'; throw e; } };
-    await expect(sendCiTimings(failing, { project: 'p', version: 'v' }, 7, {})).resolves.toEqual({ stored: false, reason: 'error', detail: 'ECONNREFUSED' });
-    await expect(sendCiTimings(failing, { project: 'p', version: 'v' }, undefined, {})).resolves.toEqual({ stored: false, reason: 'no-build-number' });
+    await expect(sendCiTimings(failing, { project: 'p', version: 'v' }, 'b-7', {})).resolves.toEqual({ stored: false, reason: 'error', detail: 'ECONNREFUSED' });
+    await expect(sendCiTimings(failing, { project: 'p', version: 'v' }, undefined, {})).resolves.toEqual({ stored: false, reason: 'no-build-id' });
+    await expect(sendCiTimings(failing, { project: 'p', version: 'v' }, '../x', {})).resolves.toEqual({ stored: false, reason: 'no-build-id' });
   });
 });
 
@@ -316,5 +348,19 @@ describe('SCRY_CONCURRENCY / SCRY_RENDER_TIMEOUT_MS forwarding', () => {
     expect(() => buildExecutionArgs({ concurrency: '0' })).toThrow(/SCRY_CONCURRENCY/);
     expect(() => buildExecutionArgs({ concurrency: '4; rm -rf /' })).toThrow(/SCRY_CONCURRENCY/);
     expect(() => buildExecutionArgs({ renderTimeoutMs: '5s' })).toThrow(/SCRY_RENDER_TIMEOUT_MS/);
+  });
+});
+
+describe('execution block fallback', () => {
+  test('without an archive the report execution block (sbcov 0.6) still gives concurrency and time lost', () => {
+    const { buildPreUploadTimings } = require('../bin/cli.js');
+    const block = { durationMs: 700, concurrency: 4, declared: 2, passed: 2, failed: 0, timeouts: 0, notIndexed: 0, timeLostMs: {}, failedTimeShare: 0 };
+    const { record } = buildPreUploadTimings({
+      coverage: { sbcovWallMs: 1000, executed: true, coverageReport: { execution: { summary: { duration: 700 }, execution: block } } },
+      manifest: null,
+      archiveMs: 5,
+      env: {},
+    });
+    expect(record).toMatchObject({ executeMs: 700, analyzeMs: 300, concurrency: 4, timeLostMs: {}, failedTimeShare: 0, stories: { declared: 2, passed: 2 } });
   });
 });
