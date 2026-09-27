@@ -20,7 +20,8 @@
 // FAKE_SBCOV_EXECUTION=1 behaves like sbcov 0.7 (storybook-preview-ci-runtime):
 // the manifest carries an `execution` timing block and --help lists
 // --concurrency / --render-timeout. FAKE_SBCOV_EXECUTE_MS sets its durationMs
-// (default 1200); FAKE_SBCOV_SLEEP_MS makes the process take that long.
+// (default 1200) and the report carries the same block at execution.timing;
+// FAKE_SBCOV_SLEEP_MS makes the process take that long.
 // FAKE_SBCOV_NO_DURATION=1 leaves execution.summary.duration out of the report.
 // FAKE_SBCOV_ARGS_FILE, when set, receives the argv it was called with (JSON).
 const fs = require('fs');
@@ -59,6 +60,23 @@ const outputZip = opt('--output-zip');
 
 const STORIES = ['button--primary', 'button--secondary', 'card--default'];
 
+// sbcov 0.7's execution timing block (the manifest's `execution`; the report's `execution.timing`).
+function timingBlock(capturedCount, droppedCount) {
+  return {
+    durationMs: EXECUTE_MS,
+    concurrency: 4,
+    timeoutMs: 15000,
+    renderTimeoutMs: 5000,
+    declared: STORIES.length,
+    passed: capturedCount,
+    failed: STORIES.length - capturedCount,
+    timeouts: droppedCount,
+    notIndexed: droppedCount,
+    timeLostMs: droppedCount ? { render_timeout: 5000 * droppedCount } : {},
+    failedTimeShare: droppedCount ? Math.min(1, (5000 * droppedCount) / EXECUTE_MS) : 0,
+  };
+}
+
 function report({ passed, failures }) {
   return {
     generatedAt: new Date().toISOString(),
@@ -76,6 +94,7 @@ function report({ passed, failures }) {
         // FAKE_SBCOV_NO_DURATION=1: a report that says nothing about time.
         ...(process.env.FAKE_SBCOV_NO_DURATION === '1' ? {} : { duration: 1 }),
       },
+      ...(EXECUTION ? { timing: timingBlock(passed.length, failures.length) } : {}),
       stories: [],
       failures: failures.map((storyId) => ({
         storyId,
@@ -105,21 +124,7 @@ function writeZip(entries, dropped = []) {
         dropped: dropped.map((storyId) => ({ storyId, storyTitle: storyId, reason: 'timeout' })),
         capture: { mode: 'root', viewport: '1280x720', scale: 2, source: 'defaults' },
         sbcovVersion: EXECUTION ? '0.7.0-fake' : '0.5.2-fake',
-        ...(EXECUTION ? {
-          execution: {
-            durationMs: EXECUTE_MS,
-            concurrency: 4,
-            timeoutMs: 15000,
-            renderTimeoutMs: 5000,
-            declared: STORIES.length,
-            passed: entries.length,
-            failed: STORIES.length - entries.length,
-            timeouts: dropped.length,
-            notIndexed: dropped.length,
-            timeLostMs: dropped.length ? { render_timeout: 5000 * dropped.length } : {},
-            failedTimeShare: dropped.length ? Math.min(1, (5000 * dropped.length) / EXECUTE_MS) : 0,
-          },
-        } : {}),
+        ...(EXECUTION ? { execution: timingBlock(entries.length, dropped.length) } : {}),
       }), { name: 'sbcov-manifest.json' });
     }
     for (const storyId of entries) a.append(Buffer.from('png'), { name: `images/${storyId}.png` });

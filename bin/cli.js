@@ -151,9 +151,9 @@ function installedSbcovVersion() {
  */
 function buildPreUploadTimings({ coverage, manifest, archiveMs, env = process.env }) {
     // sbcov 0.7 writes its execution block into the manifest (in the metadata
-    // archive) and the same block into the report at execution.execution; the
+    // archive) as `execution`, and into the report at `execution.timing`; the
     // report is the fallback when there is no archive (execution without screenshots).
-    const fromReport = coverage.coverageReport?.execution?.execution;
+    const fromReport = coverage.coverageReport?.execution?.timing;
     const execution = manifest?.execution
         || (fromReport && typeof fromReport === 'object' && !Array.isArray(fromReport) ? fromReport : null);
     // No report = sbcov crashed or never ran: its wall time is neither an

@@ -359,11 +359,32 @@ describe('SCRY_CONCURRENCY / SCRY_RENDER_TIMEOUT_MS forwarding', () => {
 });
 
 describe('execution block fallback', () => {
+  test('execute without screenshots (no archive): timing taken from the report execution.timing', async () => {
+    const r = await runDeployerCli({
+      args: ['--no-analysis', '--coverage-execute'],
+      env: { ...GITHUB_ENV, FAKE_SBCOV_EXECUTION: '1', FAKE_SBCOV_EXECUTE_MS: '60', FAKE_SBCOV_SLEEP_MS: '150' },
+    });
+    expect(r.code).toBe(0);
+    expect(r.sbcovArgs).not.toContain('--output-zip');
+    const t = finalBody(r).ciTimings;
+    expect(t).toMatchObject({
+      executeMs: 60,
+      executeSource: 'sbcov',
+      concurrency: 4,
+      timeLostMs: {},
+      failedTimeShare: 0,
+      stories: { declared: 3, passed: 3, failed: 0, timeouts: 0, notIndexed: 0 },
+      budgetMs: 121500,
+      overBudget: false,
+    });
+    expect(r.out).toContain('Story execution: 3 stories in 60 ms (4 workers), budget 2.0 min');
+  });
+
   test('without an archive the report execution block (sbcov 0.7) still gives concurrency and time lost', () => {
     const { buildPreUploadTimings } = require('../bin/cli.js');
     const block = { durationMs: 700, concurrency: 4, declared: 2, passed: 2, failed: 0, timeouts: 0, notIndexed: 0, timeLostMs: {}, failedTimeShare: 0 };
     const { record } = buildPreUploadTimings({
-      coverage: { sbcovWallMs: 1000, executed: true, coverageReport: { execution: { summary: { duration: 700 }, execution: block } } },
+      coverage: { sbcovWallMs: 1000, executed: true, coverageReport: { execution: { summary: { duration: 700 }, timing: block } } },
       manifest: null,
       archiveMs: 5,
       env: {},
