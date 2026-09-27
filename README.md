@@ -217,8 +217,8 @@ The CLI is configured through a combination of command-line options and environm
 | `--capture-mode` | `SCRY_CAPTURE_MODE`                 | Screenshot framing forwarded to scry-sbcov: `root` (crop to the component) or `viewport`. | No | unset: sbcov decides (`root` from sbcov 0.6) |
 | `--capture-scale` | `SCRY_CAPTURE_SCALE`               | Screenshot device scale factor forwarded to scry-sbcov, `0 < n <= 4`. | No | unset: sbcov decides (`2` from sbcov 0.6) |
 | `--capture-viewport` | `SCRY_CAPTURE_VIEWPORT`         | Browser viewport `WIDTHxHEIGHT` forwarded to scry-sbcov.       | No | unset: sbcov decides (`1280x720`) |
-| -              | `SCRY_CONCURRENCY` (or `concurrency` in `.storybook-deployer.json`) | Stories scry-sbcov renders at once (`--concurrency`, 1-32). Forwarded only to scry-sbcov 0.6+; with an older one the log says it was not applied. | No | unset: sbcov decides (`4` from 0.6) |
-| -              | `SCRY_RENDER_TIMEOUT_MS` (or `renderTimeoutMs`) | How long a story may take to show something before it is written off (`--render-timeout`, 100-600000 ms). sbcov 0.6+ only, as above. | No | unset: sbcov decides (`5000` from 0.6) |
+| -              | `SCRY_CONCURRENCY` (or `concurrency` in `.storybook-deployer.json`) | Stories scry-sbcov renders at once (`--concurrency`, 1-32). Forwarded only to scry-sbcov 0.7+; with an older one the log says it was not applied. | No | unset: sbcov decides (`4` from 0.7) |
+| -              | `SCRY_RENDER_TIMEOUT_MS` (or `renderTimeoutMs`) | How long a story may take to show something before it is written off (`--render-timeout`, 100-600000 ms). sbcov 0.7+ only, as above. | No | unset: sbcov decides (`5000` from 0.7) |
 | -              | `SCRY_EXECUTE_BUDGET_BASE_S`, `SCRY_EXECUTE_BUDGET_PER_STORY_S` | Story execution budget = base + per story × declared stories. Over it: a warning (`::warning::` in GitHub Actions), never a failure. See "CI time". | No | `120` and `0.5` |
 | `--verbose`    | `STORYBOOK_DEPLOYER_VERBOSE`          | Enable verbose logging for debugging purposes.                 | No       | `false`                              |
 | -              | `SCRY_NO_UPDATE_CHECK=1`              | Skip the check against npm `latest` (a one-line warning when this deployer is older; 2 s limit, never fails the deploy). | No | check on |
@@ -634,7 +634,7 @@ The PR preview workflow uses these environment variables (configured via GitHub 
 | `SCRY_API_KEY` | GitHub Secret | No | API authentication key (if required) |
 | `STORYBOOK_DEPLOYER_WITH_ANALYSIS` | GitHub Variable | No | Set to `false` to disable build processing service integration (enabled by default in generated workflows) |
 | `SCRY_MAX_DROPPED` | GitHub Variable | No | Stories allowed to fail capture before the deploy ends red (default 0) |
-| `SCRY_CONCURRENCY`, `SCRY_RENDER_TIMEOUT_MS` | GitHub Variable | No | Stories rendered at once (default 4) and how long one may take to show something (default 5000 ms); scry-sbcov 0.6+ |
+| `SCRY_CONCURRENCY`, `SCRY_RENDER_TIMEOUT_MS` | GitHub Variable | No | Stories rendered at once (default 4) and how long one may take to show something (default 5000 ms); scry-sbcov 0.7+ |
 | `SCRY_EXECUTE_BUDGET_BASE_S`, `SCRY_EXECUTE_BUDGET_PER_STORY_S` | GitHub Variable | No | Story execution budget (default 120 s + 0.5 s per story); over it = a warning, see "CI time" |
 | `GITHUB_TOKEN` | Actions token | No | Posts the PR comment and, with `permissions: actions: read`, lets the deployer record whole-job CI time |
 

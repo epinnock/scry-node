@@ -150,7 +150,7 @@ function installedSbcovVersion() {
  * ids and the execute budget. Anything not measured is left out, never 0.
  */
 function buildPreUploadTimings({ coverage, manifest, archiveMs, env = process.env }) {
-    // sbcov 0.6 writes its execution block into the manifest (in the metadata
+    // sbcov 0.7 writes its execution block into the manifest (in the metadata
     // archive) and the same block into the report at execution.execution; the
     // report is the fallback when there is no archive (execution without screenshots).
     const fromReport = coverage.coverageReport?.execution?.execution;
@@ -321,7 +321,7 @@ async function runDeployment(argv) {
         if (coverage.executionUnsupported && coverage.executionUnsupported.length) {
             logger.warn(
                 `⚠️  The installed scry-sbcov does not support ${coverage.executionUnsupported.join(' / ')}, so SCRY_CONCURRENCY /\n` +
-                '   SCRY_RENDER_TIMEOUT_MS were not applied. Upgrade @scrymore/scry-sbcov to 0.6 or later.'
+                '   SCRY_RENDER_TIMEOUT_MS were not applied. Upgrade @scrymore/scry-sbcov to 0.7 or later.'
             );
         }
         if (coverage.maxDroppedUnsupported) {

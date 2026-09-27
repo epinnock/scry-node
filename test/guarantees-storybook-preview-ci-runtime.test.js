@@ -132,7 +132,7 @@ describe('guarantee-7 every build records its CI time; unmeasured = absent and s
       timeLostMs: {},
       failedTimeShare: 0,
       concurrency: 4,
-      sbcovVersion: '0.6.0-fake',
+      sbcovVersion: '0.7.0-fake',
       deployerVersion: DEPLOYER_VERSION,
       runner: 'self-hosted',
       ci: { provider: 'github', runId: '18123456789', runAttempt: 1, workflow: 'Deploy Storybook PR Preview', job: 'deploy' },
@@ -359,7 +359,7 @@ describe('SCRY_CONCURRENCY / SCRY_RENDER_TIMEOUT_MS forwarding', () => {
 });
 
 describe('execution block fallback', () => {
-  test('without an archive the report execution block (sbcov 0.6) still gives concurrency and time lost', () => {
+  test('without an archive the report execution block (sbcov 0.7) still gives concurrency and time lost', () => {
     const { buildPreUploadTimings } = require('../bin/cli.js');
     const block = { durationMs: 700, concurrency: 4, declared: 2, passed: 2, failed: 0, timeouts: 0, notIndexed: 0, timeLostMs: {}, failedTimeShare: 0 };
     const { record } = buildPreUploadTimings({

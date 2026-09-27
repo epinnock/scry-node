@@ -37,7 +37,7 @@ node scripts/regenerate-workflow-templates.js
 - Optional variables: `SCRY_COVERAGE_ENABLED`, `SCRY_COVERAGE_FAIL_ON_THRESHOLD`,
   `SCRY_COVERAGE_EXECUTE`, `SCRY_COVERAGE_BASE`, `SCRY_VIEW_URL`,
   `SCRY_MAX_DROPPED` (stories allowed to fail capture before the deploy ends red; default 0),
-  `SCRY_CONCURRENCY`, `SCRY_RENDER_TIMEOUT_MS` (scry-sbcov 0.6+),
+  `SCRY_CONCURRENCY`, `SCRY_RENDER_TIMEOUT_MS` (scry-sbcov 0.7+),
   `SCRY_EXECUTE_BUDGET_BASE_S`, `SCRY_EXECUTE_BUDGET_PER_STORY_S` (story execution budget; over it = a warning)
 
 To refresh a project's workflows to the current templates:

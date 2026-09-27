@@ -7,7 +7,7 @@
 // timing, so the build document could not record how much CI time Scry took.
 //
 // Driven through the real CLI (child process, local stub upload service, fake
-// scry-sbcov 0.6 that reports its execution time), with a budget small enough
+// scry-sbcov 0.7 that reports its execution time), with a budget small enough
 // that the run is over it.
 const { runDeployerCli } = require('./helpers/runDeployerCli.js');
 

@@ -17,7 +17,7 @@
 // Archives carry sbcov-manifest.json {declared, captured, dropped:[...]} like
 // sbcov 0.5.2. FAKE_SBCOV_OLD=1 behaves like sbcov <= 0.5.1: no manifest, no
 // --max-dropped in --help, and "unknown option" (exit 1) if it is passed.
-// FAKE_SBCOV_EXECUTION=1 behaves like sbcov 0.6 (storybook-preview-ci-runtime):
+// FAKE_SBCOV_EXECUTION=1 behaves like sbcov 0.7 (storybook-preview-ci-runtime):
 // the manifest carries an `execution` timing block and --help lists
 // --concurrency / --render-timeout. FAKE_SBCOV_EXECUTE_MS sets its durationMs
 // (default 1200); FAKE_SBCOV_SLEEP_MS makes the process take that long.
@@ -104,7 +104,7 @@ function writeZip(entries, dropped = []) {
         captured: entries.length,
         dropped: dropped.map((storyId) => ({ storyId, storyTitle: storyId, reason: 'timeout' })),
         capture: { mode: 'root', viewport: '1280x720', scale: 2, source: 'defaults' },
-        sbcovVersion: EXECUTION ? '0.6.0-fake' : '0.5.2-fake',
+        sbcovVersion: EXECUTION ? '0.7.0-fake' : '0.5.2-fake',
         ...(EXECUTION ? {
           execution: {
             durationMs: EXECUTE_MS,
