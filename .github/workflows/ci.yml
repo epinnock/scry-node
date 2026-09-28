@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, stage]
+    paths-ignore: ['**/*.md', 'docs/**']
+  # ready_for_review: drafts skip CI, so a PR gets its first run when marked ready.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, stage]
+    paths-ignore: ['**/*.md', 'docs/**']
+
+# CI only, so a newer run of the same PR or branch cancels the older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    # Public repo: pull_request CI never runs on the self-hosted pool, fork PR or
+    # not, so this is plain ubuntu-latest rather than vars.RUNNER.
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
