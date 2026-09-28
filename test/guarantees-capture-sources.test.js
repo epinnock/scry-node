@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { runUploadBundle } = require('../lib/uploadCommand.js');
+const { prepareBundle, BundleRejectedError } = require('../lib/bundle.js');
 const { validateBundle } = require('../lib/scf.js');
 const { writeAnalysisBundle } = require('../lib/analysisBundle.js');
 const { encodePng } = require('../lib/capture/png.js');
@@ -114,6 +115,26 @@ describe('guarantee-6 source text is packed only with --include-source (AT-17)',
         expect(members.filter((m) => m.startsWith('source/'))).toEqual(['source/src/components/Button.tsx.src.txt']);
         expect(logger.lines).toContain('warn: Source text not included for ../../../etc/passwd: outside the repository root.');
     });
+
+    test('F44 --include-source never follows a symlinked intermediate directory out of the repository root', async () => {
+        const { repo, bundle } = rnBundleWithRepo();
+        const secretDir = tmp();
+        fs.writeFileSync(path.join(secretDir, 'passwd.txt'), 'root:x:0:0::/root:/bin/sh\n');
+        fs.mkdirSync(path.join(repo, 'vendor'));
+        // vendor/evil is a symlinked DIRECTORY under repo root; passwd.txt itself is not a
+        // symlink, so lstat-the-leaf alone (pre-fix behaviour) would have let this through.
+        fs.symlinkSync(secretDir, path.join(repo, 'vendor', 'evil'), 'dir');
+        const manifest = JSON.parse(fs.readFileSync(path.join(bundle, 'scf.json'), 'utf8'));
+        manifest.captures[0].code.componentFile = 'vendor/evil/passwd.txt';
+        fs.writeFileSync(path.join(bundle, 'scf.json'), JSON.stringify(manifest));
+        const logger = recordingLogger();
+        const res = await runUploadBundle({ path: bundle, repoRoot: repo, includeSource: true, dryRun: true }, { logger });
+        expect(res.exitCode).toBe(0);
+        const { members } = unzipMembers(res.prepared.zipPath);
+        // Only the legitimate Button.tsx (captures[1]) is packed; passwd.txt never is.
+        expect(members.filter((m) => m.startsWith('source/'))).toEqual(['source/src/components/Button.tsx.src.txt']);
+        expect(logger.lines).toContain('warn: Source text not included for vendor/evil/passwd.txt: outside the repository root.');
+    });
 });
 
 describe('guarantee-7 the CLI validates exactly like the vendored validator', () => {
@@ -181,6 +202,73 @@ describe('guarantee-7 the CLI validates exactly like the vendored validator', ()
         );
         expect(res.exitCode).toBe(1);
         expect(uploadBundle).not.toHaveBeenCalled();
+    });
+});
+
+describe('F45 prepareBundle never leaks its staging directory', () => {
+    /** Captures the real path mkdtempSync() actually created, so the test checks the SAME
+     * directory prepareBundle() used rather than scanning the shared os.tmpdir() (which other,
+     * concurrently-running test files could also be writing scry-bundle-* entries into). */
+    function spyOnMkdtemp() {
+        const created = [];
+        const real = jest.requireActual('fs').mkdtempSync;
+        const spy = jest.spyOn(fs, 'mkdtempSync').mockImplementation((prefix) => {
+            const dir = real(prefix);
+            created.push(dir);
+            return dir;
+        });
+        return { created, restore: () => spy.mockRestore() };
+    }
+
+    test('a bundle rejected by local validation (BundleRejectedError) leaves nothing in /tmp', async () => {
+        const { created, restore } = spyOnMkdtemp();
+        try {
+            await expect(
+                prepareBundle(path.join(FIXTURES, 'invalid', 'forbidden-member', 'bundle'), { includeSource: false, logger: recordingLogger() })
+            ).rejects.toBeInstanceOf(BundleRejectedError);
+        } finally {
+            restore();
+        }
+        expect(created).toHaveLength(1);
+        expect(fs.existsSync(created[0])).toBe(false);
+    });
+
+    test('any other thrown error during staging also leaves nothing in /tmp (try/finally on every path, not just validation)', async () => {
+        const missingInput = path.join(tmp(), 'does-not-exist.zip'); // created before the spy below
+        const { created, restore } = spyOnMkdtemp();
+        try {
+            await expect(
+                prepareBundle(missingInput, { includeSource: false, logger: recordingLogger() })
+            ).rejects.toThrow();
+        } finally {
+            restore();
+        }
+        expect(created).toHaveLength(1);
+        expect(fs.existsSync(created[0])).toBe(false);
+    });
+
+    test('a caller-supplied workDir is left alone on rejection (cleanup is that caller\'s job)', async () => {
+        const workDir = tmp();
+        await expect(
+            prepareBundle(path.join(FIXTURES, 'invalid', 'forbidden-member', 'bundle'), { includeSource: false, logger: recordingLogger(), workDir })
+        ).rejects.toBeInstanceOf(BundleRejectedError);
+        expect(fs.existsSync(workDir)).toBe(true);
+    });
+
+    test('end to end: scry upload on a rejected bundle leaves no /tmp/scry-bundle-* directory (runUploadBundle)', async () => {
+        const { created, restore } = spyOnMkdtemp();
+        let res;
+        try {
+            res = await runUploadBundle(
+                { path: path.join(FIXTURES, 'invalid', 'forbidden-member', 'bundle'), project: 'p1', version: 'v1' },
+                { logger: recordingLogger(), deps: { uploadBundle: jest.fn(), getApiClient: () => ({}), resolveBuildGitContext: () => ({}) } }
+            );
+        } finally {
+            restore();
+        }
+        expect(res.exitCode).toBe(1);
+        expect(created).toHaveLength(1);
+        expect(fs.existsSync(created[0])).toBe(false);
     });
 });
 
