@@ -10,7 +10,8 @@
     "postinstall": "node scripts/postinstall.js",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "check:scf-vendor": "node scripts/check-scf-vendor.mjs"
   },
   "bin": {
     "scry-deployer": "bin/cli.js",
@@ -57,6 +58,7 @@
     "inquirer": "^8.2.6",
     "open": "^8.4.2",
     "storycap": "^4.2.0",
+    "ws": "^8.19.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

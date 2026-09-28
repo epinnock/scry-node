@@ -197,6 +197,51 @@ Analyze Storybook stories, capture screenshots, and generate metadata without de
 npx storybook-deploy analyze [options]
 ```
 
+Since 0.10 it writes a [Scry Capture Format](https://github.com/scryorg/scry-capture-format) bundle
+(`scf.json` + images) and uploads it through the bundle route, so the build is queued for indexing
+(earlier versions uploaded a ZIP that created a build and never indexed it).
+
+### Upload Command (Scry Capture Format bundles)
+
+Upload captures from any tool as an SCF 1.0 bundle — a directory or `.zip` with `scf.json` at the
+root (a legacy sbcov `metadata.json` archive also works):
+
+```bash
+npx @scrymore/scry-deployer upload ./.scry/capture --project <id> --api-key <key> [--deploy-version v1]
+```
+
+- The bundle is validated locally first with the same validator the upload service runs
+  (`@scrymore/scf`, vendored in `lib/vendor/scf`). Every problem is printed with its capture id and
+  the command exits 1 without uploading anything. `--dry-run` validates and zips only.
+- `--source <kind>:<platform>` must match `scf.json` (it defaults to it).
+- **Source code is never uploaded unless you pass `--include-source`.** With it, each capture's
+  `code.componentFile` (relative to `--repo-root`, default the working directory) is copied into the
+  bundle's `source/` folder and the CLI prints `Uploading source text for N components
+  (--include-source)`. Without it, any `source/` files or `sourceText` fields already in the input
+  bundle are dropped.
+
+### Capture Command (React Native Storybook)
+
+Capture every story of an on-device [React Native Storybook](https://github.com/storybookjs/react-native)
+(v10+, `websockets: 'auto'`) on an iOS Simulator or Android emulator into an SCF bundle:
+
+```bash
+npx @scrymore/scry-deployer capture rn --platform android --device Pixel_6_API_34 [--app app-debug.apk]
+npx @scrymore/scry-deployer capture rn --platform ios --device "iPhone 16" [--app Kettle.app]
+npx @scrymore/scry-deployer upload .scry/capture --project <id>
+```
+
+It starts Metro with `STORYBOOK_ENABLED=true` (unless the Storybook channel on `:7007` is already up),
+boots or finds the device, fixes the status bar (iOS: 9:41 and a full battery; Android: System UI demo
+mode) and turns animations off, installs `--app` (or builds with `--build`, or uses the installed app
+from `app.json`'s id), then for each story from the channel's `/index.json`: selects it over the
+websocket, waits for it to render and for two identical frames (10 s budget, `--settle-timeout`, else it
+is listed as skipped with reason `timeout`), crops to the view with `testID="scry-root"` and writes
+`images/NNNN.png`. `scf.json` records `source.kind: storybook-rn`, the platform, device, scale and honest
+counts; there is no `links.live`. If the app includes Scry's dev-only probe (see
+[scry-sample-rn](https://github.com/scryorg/scry-sample-rn) `.rnstorybook/scryProbe.tsx`), each story also
+gets an `rn-fiber` structure tree. Output goes to `.scry/capture` (`--out`).
+
 ### Options
 
 The CLI is configured through a combination of command-line options and environment variables. Command-line options always take precedence.

@@ -1,0 +1,6 @@
+{
+  "url": "https://test-bucket.s3.amazonaws.com/acme/main/builds/5/bundle.zip?AWSAccessKeyId=test&Expires=1234567890&Signature=test",
+  "fields": { "key": "acme/main/builds/5/bundle.zip" },
+  "buildId": "build-100",
+  "buildNumber": 5
+}
