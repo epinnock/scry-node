@@ -40,11 +40,36 @@ describe('lib/gitContext', () => {
   });
 
   test('falls back to the working copy outside CI', () => {
-    const context = resolveBuildGitContext({ cwd: REPO, env: {} });
+    // A standalone repo on a named branch, isolated from whatever checkout state
+    // the outer repo running this suite happens to be in. actions/checkout
+    // leaves a detached HEAD for a pull_request event (the merge ref is not a
+    // local branch), which made this test flaky in CI when it read the outer
+    // repo's own HEAD: `git rev-parse --abbrev-ref HEAD` there reports "HEAD",
+    // which resolveBuildGitContext correctly treats as "no branch".
+    const { execSync } = require('child_process');
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scry-git-workingcopy-'));
+    const git = (args) =>
+      execSync(`git ${args}`, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 
-    // This test runs inside the repository, so both are knowable.
-    expect(context.commitSha).toMatch(/^[0-9a-f]{40}$/);
-    expect(typeof context.branch).toBe('string');
+    try {
+      git('init -q -b work');
+      // Local config, not global: a CI runner has no global git identity.
+      git('config user.email scry-test@example.com');
+      git('config user.name "Scry Test"');
+      fs.writeFileSync(path.join(dir, 'file.txt'), 'hello');
+      git('add file.txt');
+      git('commit -q -m init');
+      const expectedSha = git('rev-parse HEAD');
+
+      const context = resolveBuildGitContext({ cwd: dir, env: {} });
+
+      expect(context).toEqual({ commitSha: expectedSha, branch: 'work' });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('omits both members outside a git checkout rather than sending empties', () => {

@@ -1,11 +1,36 @@
 const fs = require('fs');
 const path = require('path');
 
+// Every CI-provider variable lib/coverage.js's resolveCoverageBaseRef() reads
+// (directly, or via readGithubPullRequestBaseSha's GITHUB_EVENT_PATH), plus the
+// general CI markers GitHub Actions sets ambiently on every run. A test that
+// wants to exercise one provider's branch must not have another provider's var
+// (or an ambient GITHUB_EVENT_PATH pointing at this run's real PR event) still
+// set from the outer CI environment, or the higher-priority provider silently
+// wins the way it does in an actual GitHub Actions run.
+const CI_PROVIDER_ENV_VARS = [
+  'CI',
+  'GITHUB_ACTIONS',
+  'GITHUB_SHA',
+  'GITHUB_REF',
+  'GITHUB_REF_NAME',
+  'GITHUB_BASE_REF',
+  'GITHUB_HEAD_REF',
+  'GITHUB_EVENT_NAME',
+  'GITHUB_EVENT_PATH',
+  'GITHUB_REPOSITORY',
+  'GITHUB_TOKEN',
+  'CI_MERGE_REQUEST_TARGET_BRANCH_SHA',
+  'BITBUCKET_PR_DESTINATION_COMMIT',
+  'BITBUCKET_PR_BASE_COMMIT',
+];
+
 describe('lib/coverage', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    for (const key of CI_PROVIDER_ENV_VARS) delete process.env[key];
   });
 
   afterEach(() => {
