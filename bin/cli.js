@@ -776,6 +776,7 @@ async function main() {
                     .option('device', { describe: 'Simulator name (e.g. "iPhone 16") or AVD name / adb serial', type: 'string' })
                     .option('app', { describe: 'Built app to install first (.app for iOS, .apk for Android)', type: 'string' })
                     .option('app-id', { describe: 'Bundle id / package (default: from app.json)', type: 'string' })
+                    .option('open-url', { describe: 'Deep link to open after launch, e.g. exp://127.0.0.1:8081 for Expo Go (with --app-id host.exp.Exponent) or a dev client URL', type: 'string' })
                     .option('build', { describe: 'Build and install the app with `expo run:<platform>` when it is not installed', type: 'boolean', default: false })
                     .option('project-dir', { describe: 'React Native project directory (default: cwd)', type: 'string' })
                     .option('out', { describe: 'Bundle output directory (default: <project>/.scry/capture)', type: 'string' })
@@ -788,8 +789,13 @@ async function main() {
             }, async (argv) => {
                 const { runCaptureRn } = require('../lib/capture/rn.js');
                 const logger = createLogger(argv);
-                const outcome = await runCaptureRn(argv, { logger, toolVersion: DEPLOYER_VERSION, gitContext: resolveBuildGitContext() });
-                process.exitCode = outcome.exitCode;
+                try {
+                    const outcome = await runCaptureRn(argv, { logger, toolVersion: DEPLOYER_VERSION, gitContext: resolveBuildGitContext() });
+                    process.exitCode = outcome.exitCode;
+                } catch (error) {
+                    logger.error(`❌ capture rn failed: ${error.message}`);
+                    process.exitCode = 1;
+                }
             })
             .command('coverage', 'Run only Storybook coverage analysis and write the report to disk', (yargs) => {
                 return yargs
