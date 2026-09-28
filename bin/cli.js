@@ -7,7 +7,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { zipDirectory } = require('../lib/archive.js');
-const { createMasterZip } = require('../lib/archiveUtils.js');
 const { getApiClient, uploadBuild } = require('../lib/apiClient.js');
 const { createLogger } = require('../lib/logger.js');
 const { AppError, ApiError } = require('../lib/errors.js');
@@ -25,6 +24,8 @@ const { countMetadataEntries, readSbcovManifest, droppedReasons } = require('../
 const { checkForNewerVersion } = require('../lib/versionCheck.js');
 const { version: DEPLOYER_VERSION } = require('../package.json');
 const ciTimings = require('../lib/ciTimings.js');
+const { runUploadBundle } = require('../lib/uploadCommand.js');
+const { writeAnalysisBundle } = require('../lib/analysisBundle.js');
 
 async function runAnalysis(argv) {
     const logger = createLogger(argv);
@@ -32,7 +33,7 @@ async function runAnalysis(argv) {
     // Credentials masked: this line is also a Sentry breadcrumb.
     logger.debug(`Received arguments: ${JSON.stringify(redactArgv(argv))}`);
 
-    const outPath = path.join(os.tmpdir(), `storybook-analysis-${Date.now()}.zip`);
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'storybook-analysis-'));
 
     try {
         // 1. Capture screenshots if storybook URL provided
@@ -55,35 +56,32 @@ async function runAnalysis(argv) {
         logger.success(`✅ Found ${analysisResults.summary.totalStories} stories (${analysisResults.summary.withScreenshots} with screenshots)`);
         logger.debug(`Analysis complete: ${JSON.stringify(analysisResults.summary)}`);
 
-        // 3. Create master ZIP
-        logger.info('3/4: Creating master archive...');
-        await createMasterZip({
-            outPath: outPath,
-            staticsiteDir: null, // No static site for analyze-only
-            screenshotsDir: argv.screenshotsDir,
-            metadata: analysisResults
-        });
-        logger.success(`✅ Master archive created: ${outPath}`);
-        logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
+        // 3-4. Write an SCF bundle and send it through the bundle route. The old master ZIP
+        // went to the presigned storybook.zip route, which creates a build and never queues
+        // it, so no analyze build was ever indexed (capture-sources ledger F3).
+        logger.info('3/4: Writing the capture bundle (scf.json + images)...');
+        const bundleDir = path.join(workDir, 'bundle');
+        const gitContext = resolveBuildGitContext();
+        const written = writeAnalysisBundle(analysisResults, bundleDir, { toolVersion: DEPLOYER_VERSION, gitContext });
+        logger.success(`✅ Bundle written: ${written.captured} captures, ${written.skipped} stories without a screenshot`);
 
-        // 4. Upload archive
-        logger.info('4/4: Uploading to deployment service...');
-        const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-        const uploadResult = await uploadFileDirectly(apiClient, {
+        logger.info('4/4: Validating and uploading the bundle...');
+        const outcome = await runUploadBundle({
+            path: bundleDir,
             project: argv.project,
             version: argv.version,
-        }, outPath);
-        logger.success('✅ Archive uploaded.');
-        logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
+            apiUrl: argv.apiUrl,
+            apiKey: argv.apiKey,
+        }, { logger });
+        if (outcome.exitCode !== 0) {
+            process.exitCode = 1;
+            return;
+        }
 
         logger.success('\n🎉 Analysis complete! 🎉');
 
     } finally {
-        // Clean up the local archive
-        if (fs.existsSync(outPath)) {
-            fs.unlinkSync(outPath);
-            logger.info(`🧹 Cleaned up temporary file: ${outPath}`);
-        }
+        fs.rmSync(workDir, { recursive: true, force: true });
     }
 }
 
@@ -437,6 +435,10 @@ async function runDeployment(argv) {
             fs.unlinkSync(metadataZipPath);
             logger.info(`🧹 Cleaned up temporary file: ${metadataZipPath}`);
         }
+        // sbcov 0.8+ writes a Scry Capture Format bundle next to the metadata ZIP; this deploy
+        // uploads the metadata ZIP (legacy path, unchanged keys), so the sibling is only removed.
+        const scfSibling = metadataZipPath ? metadataZipPath.replace(/\.zip$/i, '') + '.scf.zip' : null;
+        if (scfSibling && fs.existsSync(scfSibling)) fs.unlinkSync(scfSibling);
     }
 }
 
@@ -750,6 +752,45 @@ async function main() {
                 await runAnalysis(config);
             })
             
+            .command('upload <path>', 'Validate a Scry Capture Format bundle (dir or .zip) and upload it', (yargs) => {
+                return yargs
+                    .positional('path', { describe: 'Bundle directory (scf.json + images) or .zip', type: 'string' })
+                    .option('project', { describe: 'Project ID', type: 'string' })
+                    .option('deploy-version', { alias: 'v', describe: 'Version identifier (default: bundle-<timestamp>)', type: 'string' })
+                    .option('api-key', { describe: 'Project API key', type: 'string' })
+                    .option('api-url', { describe: 'Upload service URL', type: 'string' })
+                    .option('source', { describe: 'Source key "<kind>:<platform>" (default: from scf.json)', type: 'string' })
+                    .option('include-source', { describe: "Also upload each capture's component source text (code.componentFile). Off by default: Scry never needs your code", type: 'boolean', default: false })
+                    .option('repo-root', { describe: 'Repository root that code.componentFile paths are relative to (default: cwd)', type: 'string' })
+                    .option('dry-run', { describe: 'Validate and zip only; print where the ZIP is', type: 'boolean', default: false })
+                    .option('verbose', { describe: 'Enable verbose logging', type: 'boolean' });
+            }, async (argv) => {
+                const config = loadConfig(argv);
+                const outcome = await runUploadBundle({ ...config, path: argv.path, includeSource: argv.includeSource, repoRoot: argv.repoRoot, source: argv.source, dryRun: argv.dryRun });
+                process.exitCode = outcome.exitCode;
+            })
+            .command('capture <adapter>', 'Capture stories into a Scry Capture Format bundle (adapters: rn)', (yargs) => {
+                return yargs
+                    .positional('adapter', { describe: 'Capture adapter', choices: ['rn'] })
+                    .option('platform', { describe: 'ios (Simulator, macOS) or android (emulator)', choices: ['ios', 'android'], demandOption: true })
+                    .option('device', { describe: 'Simulator name (e.g. "iPhone 16") or AVD name / adb serial', type: 'string' })
+                    .option('app', { describe: 'Built app to install first (.app for iOS, .apk for Android)', type: 'string' })
+                    .option('app-id', { describe: 'Bundle id / package (default: from app.json)', type: 'string' })
+                    .option('build', { describe: 'Build and install the app with `expo run:<platform>` when it is not installed', type: 'boolean', default: false })
+                    .option('project-dir', { describe: 'React Native project directory (default: cwd)', type: 'string' })
+                    .option('out', { describe: 'Bundle output directory (default: <project>/.scry/capture)', type: 'string' })
+                    .option('stories', { describe: 'Comma-separated story ids to capture (default: all)', type: 'string' })
+                    .option('metro', { describe: 'Start Metro with STORYBOOK_ENABLED=true when the Storybook channel is not already up', type: 'boolean', default: true })
+                    .option('ws-port', { describe: 'Storybook channel port', type: 'number', default: 7007 })
+                    .option('settle-timeout', { describe: 'Per-story budget in ms to render and settle (two identical frames)', type: 'number', default: 10000 })
+                    .option('structure', { describe: 'Write an rn-fiber structure tree per story when the app exposes one', type: 'boolean', default: true })
+                    .option('verbose', { describe: 'Enable verbose logging', type: 'boolean' });
+            }, async (argv) => {
+                const { runCaptureRn } = require('../lib/capture/rn.js');
+                const logger = createLogger(argv);
+                const outcome = await runCaptureRn(argv, { logger, toolVersion: DEPLOYER_VERSION, gitContext: resolveBuildGitContext() });
+                process.exitCode = outcome.exitCode;
+            })
             .command('coverage', 'Run only Storybook coverage analysis and write the report to disk', (yargs) => {
                 return yargs
                     .option('dir', {
