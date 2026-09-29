@@ -1,0 +1,143 @@
+{
+  "_comment": "Shared BPS/scry-nextjs fixture for gemini-embedding-2 (gemini-embeddings contract.md \"Shared fixture\"). Keys redacted. Both copies must stay byte-identical: BPS test/fixtures/gemini-embed-requests.json, nextjs app/lib/__tests__/fixtures/gemini-embed-requests.json. Recorded from the BPS request builders; the live shape was confirmed by a real call (1024 dims, unit norm) on 2026-09-29.",
+  "model": "gemini-embedding-2",
+  "dims": 1024,
+  "base": "https://generativelanguage.googleapis.com/v1beta",
+  "auth": "header x-goog-api-key (never a query parameter)",
+  "requests": {
+    "document_text": {
+      "use": "document text (BPS): batchEmbedContents, at most 100 per call. Prefix: title: {component_name or \"none\"} | text: {searchable_text}",
+      "method": "POST",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents",
+      "headers": {
+        "Content-Type": "application/json",
+        "x-goog-api-key": "<redacted>"
+      },
+      "body": {
+        "requests": [
+          {
+            "model": "models/gemini-embedding-2",
+            "content": {
+              "parts": [
+                {
+                  "text": "title: Button | text: A blue primary button with rounded corners"
+                }
+              ]
+            },
+            "outputDimensionality": 1024
+          },
+          {
+            "model": "models/gemini-embedding-2",
+            "content": {
+              "parts": [
+                {
+                  "text": "title: none | text: A login form with an email field"
+                }
+              ]
+            },
+            "outputDimensionality": 1024
+          }
+        ]
+      }
+    },
+    "document_image": {
+      "use": "document image (BPS): embedContent, one PNG per request, no text prefix",
+      "method": "POST",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
+      "headers": {
+        "Content-Type": "application/json",
+        "x-goog-api-key": "<redacted>"
+      },
+      "body": {
+        "model": "models/gemini-embedding-2",
+        "content": {
+          "parts": [
+            {
+              "inline_data": {
+                "mime_type": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+              }
+            }
+          ]
+        },
+        "outputDimensionality": 1024
+      }
+    },
+    "query_text": {
+      "use": "query text (scry-nextjs): embedContent. Prefix: task: search result | query: {q}",
+      "method": "POST",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
+      "headers": {
+        "Content-Type": "application/json",
+        "x-goog-api-key": "<redacted>"
+      },
+      "body": {
+        "model": "models/gemini-embedding-2",
+        "content": {
+          "parts": [
+            {
+              "text": "task: search result | query: blue login button"
+            }
+          ]
+        },
+        "outputDimensionality": 1024
+      }
+    },
+    "query_image": {
+      "use": "query image (scry-nextjs): embedContent, inline_data, no prefix",
+      "method": "POST",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
+      "headers": {
+        "Content-Type": "application/json",
+        "x-goog-api-key": "<redacted>"
+      },
+      "body": {
+        "model": "models/gemini-embedding-2",
+        "content": {
+          "parts": [
+            {
+              "inline_data": {
+                "mime_type": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+              }
+            }
+          ]
+        },
+        "outputDimensionality": 1024
+      }
+    }
+  },
+  "responses": {
+    "_note": "Real responses carry 1024 values, L2-normalised (norm 1 +/- 1e-3); shortened to 4 here.",
+    "embedContent": {
+      "embedding": {
+        "values": [
+          -0.0256,
+          -0.0253,
+          0.0069,
+          0.0118
+        ]
+      }
+    },
+    "batchEmbedContents": {
+      "embeddings": [
+        {
+          "values": [
+            -0.0256,
+            -0.0253,
+            0.0069,
+            0.0118
+          ]
+        },
+        {
+          "values": [
+            0.0102,
+            -0.0311,
+            0.0044,
+            0.0207
+          ]
+        }
+      ]
+    }
+  }
+}

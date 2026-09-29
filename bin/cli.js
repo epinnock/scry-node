@@ -1031,8 +1031,12 @@ async function main() {
                         describe: 'OpenAI API key (for --local mode)',
                         type: 'string',
                     })
+                    .option('gemini-api-key', {
+                        describe: 'Gemini API key (for --local mode; or GEMINI_API_KEY). Writes 1024-dim vectors to a g2 collection',
+                        type: 'string',
+                    })
                     .option('jina-api-key', {
-                        describe: 'Jina API key (for --local mode)',
+                        describe: 'DEPRECATED: use --gemini-api-key. Jina API key (for --local mode)',
                         type: 'string',
                     })
                     .option('milvus-address', {
@@ -1044,7 +1048,8 @@ async function main() {
                         type: 'string',
                     })
                     .option('milvus-collection', {
-                        describe: 'Milvus collection name (for --local mode)',
+                        alias: 'collection',
+                        describe: 'Milvus collection name (for --local mode). With --gemini-api-key it must be a g2 collection (or set MILVUS_COLLECTION_G2)',
                         type: 'string',
                     })
                     .option('api-key', {
@@ -1075,21 +1080,7 @@ async function main() {
 
                 if (config.local) {
                     // Local mode: process images directly via LLM + embeddings + Milvus
-                    const requiredLocalKeys = {
-                        openaiApiKey: { flag: '--openai-api-key', env: 'OPENAI_API_KEY' },
-                        jinaApiKey: { flag: '--jina-api-key', env: 'JINA_API_KEY' },
-                        milvusAddress: { flag: '--milvus-address', env: 'MILVUS_ADDRESS' },
-                        milvusToken: { flag: '--milvus-token', env: 'MILVUS_TOKEN' },
-                        milvusCollection: { flag: '--milvus-collection', env: 'MILVUS_COLLECTION' },
-                    };
-
-                    const resolved = {};
-                    for (const [key, { flag, env }] of Object.entries(requiredLocalKeys)) {
-                        resolved[key] = config[key] || process.env[env];
-                        if (!resolved[key]) {
-                            throw new Error(`${flag} or ${env} env var is required for local mode`);
-                        }
-                    }
+                    const resolved = resolveLocalProcessingKeys(config);
 
                     await runLocalImageProcessing({
                         dir: config.dir,
@@ -1113,6 +1104,41 @@ async function main() {
     } catch (error) {
         await handleError(error, error.config || {});
     }
+}
+
+/**
+ * Resolve the keys `upload-images --local` needs. A Gemini key selects Gemini Embedding 2
+ * (1024 dims, g2 collection); otherwise the deprecated Jina key is used, with one warning.
+ * Gemini runs read MILVUS_COLLECTION_G2 so a Jina collection env can never leak in (G1).
+ *
+ * @param {any} config
+ */
+function resolveLocalProcessingKeys(config) {
+    const useGemini = Boolean(config.geminiApiKey || process.env.GEMINI_API_KEY);
+    const embedKey = useGemini
+        ? { geminiApiKey: { flag: '--gemini-api-key', env: 'GEMINI_API_KEY' } }
+        : { jinaApiKey: { flag: '--gemini-api-key', env: 'GEMINI_API_KEY (or the deprecated --jina-api-key / JINA_API_KEY)' } };
+    const required = {
+        openaiApiKey: { flag: '--openai-api-key', env: 'OPENAI_API_KEY' },
+        ...embedKey,
+        milvusAddress: { flag: '--milvus-address', env: 'MILVUS_ADDRESS' },
+        milvusToken: { flag: '--milvus-token', env: 'MILVUS_TOKEN' },
+        milvusCollection: { flag: '--milvus-collection', env: useGemini ? 'MILVUS_COLLECTION_G2' : 'MILVUS_COLLECTION' },
+    };
+
+    const resolved = {};
+    for (const [key, { flag, env }] of Object.entries(required)) {
+        const envName = env.split(' ')[0];
+        resolved[key] = config[key] || process.env[envName] || (key === 'jinaApiKey' ? process.env.JINA_API_KEY : undefined);
+        if (!resolved[key]) {
+            throw new Error(`${flag} or ${env} env var is required for local mode`);
+        }
+    }
+
+    if (!useGemini) {
+        console.warn('[deprecated] --jina-api-key / JINA_API_KEY is deprecated and will be removed; use --gemini-api-key / GEMINI_API_KEY (Gemini Embedding 2, 1024-dim g2 collection).');
+    }
+    return resolved;
 }
 
 /**
