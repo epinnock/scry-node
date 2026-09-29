@@ -100,3 +100,64 @@ describe('Sentry', () => {
     expect(sentText()).not.toContain('@example.com');
   });
 });
+
+describe('N1/N2 console-bound server strings', () => {
+  const SIG_URL = 'https://acct.r2.cloudflarestorage.com/b/k?X-Amz-Signature=deadbeefcanary&X-Amz-Credential=AKIAcanary';
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { sanitizeServerText, uploadBundle, uploadMetadataZip, requestPresignedUrl } = require('../lib/apiClient.js');
+  const zip = () => {
+    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'scry-n-')), 'x.zip');
+    fs.writeFileSync(p, Buffer.from('PK\u0005\u0006' + '\0'.repeat(18), 'binary'));
+    return p;
+  };
+
+  test('bundle response lacking fields.key never prints the presigned URL body', async () => {
+    const post = jest.fn().mockResolvedValue({ status: 200, data: { url: SIG_URL, buildId: 'b1' } });
+    const errors = [];
+    const log = { info() {}, success() {}, warn() {}, error: (m) => errors.push(m) };
+    const res = await uploadBundle({ defaults: { baseURL: 'https://u' }, post }, { project: 'p', version: 'v' }, zip(), { sourceKey: 's', log }).catch((e) => e);
+    const all = `${res.message} ${JSON.stringify(errors)}`;
+    expect(res).toBeInstanceOf(ApiError);
+    expect(all).toContain('HTTP 200');
+    expect(all).not.toContain('X-Amz-Signature');
+    expect(all).not.toContain('canary');
+  });
+
+  test('invalid presigned URL messages carry status only', async () => {
+    const post = jest.fn().mockResolvedValue({ status: 200, data: { url: '', signature: 'canary-sig', buildId: 'b' } });
+    const err = await requestPresignedUrl({ post }, { project: 'p', version: 'v' }, { fileName: 'a.zip', contentType: 'application/zip' }).catch((e) => e);
+    expect(err.message).toContain('HTTP 200');
+    expect(err.message).not.toContain('canary');
+    const bad = await requestPresignedUrl({ post: jest.fn().mockResolvedValue({ status: 200, data: { url: 'not a url ?X-Amz-Signature=canary' } }) }, { project: 'p', version: 'v' }, { fileName: 'a.zip', contentType: 'application/zip' }).catch((e) => e);
+    expect(bad.message).not.toContain('canary');
+  });
+
+  test('an error with ANSI and 10,000 chars is cleaned and capped on every path', async () => {
+    const evil = '\u001b[2J\u001b]0;pwn\u0007\u0000' + 'A'.repeat(10000);
+    const clean = sanitizeServerText(evil);
+    expect(clean).not.toMatch(/[\u0000-\u001f\u007f]/);
+    expect(clean.length).toBeLessThanOrEqual(200);
+    expect(clean).not.toContain('pwn');
+
+    const e422 = axiosError(422, { error: evil });
+    const errs = [];
+    const meta = await uploadMetadataZip({ defaults: { baseURL: 'https://u' }, post: jest.fn().mockRejectedValue(e422) }, { project: 'p', version: 'v' }, zip(), { info() {}, success() {}, error: (m) => errs.push(m) });
+    expect(meta.error.length).toBeLessThanOrEqual(200);
+    expect(meta.error).not.toMatch(/[\u0000-\u001f]/);
+    expect(errs.join('')).not.toMatch(/\u001b/);
+
+    const post = jest.fn().mockResolvedValueOnce({ status: 200, data: { url: 'https://acct.r2.cloudflarestorage.com/x?s=1', fields: { key: 'k' }, buildId: 'b' } }).mockRejectedValueOnce(axiosError(422, { message: evil }));
+    const axios2 = require('axios');
+    jest.spyOn(axios2, 'put').mockResolvedValue({ status: 200 });
+    const b = await uploadBundle({ defaults: { baseURL: 'https://u' }, post }, { project: 'p', version: 'v' }, zip(), { sourceKey: 's', log: { info() {}, success() {}, warn() {}, error() {} } });
+    expect(b.error.length).toBeLessThanOrEqual(200);
+    expect(b.error).not.toMatch(/[\u0000-\u001f]/);
+
+    const client = { defaults: { baseURL: 'https://u' }, post: jest.fn().mockRejectedValue(axiosError(400, { error: evil })) };
+    const err = await uploadFileDirectly(client, { project: 'p', version: 'v' }, __filename, 'a.zip', 'application/zip').catch((x) => x);
+    expect(err.message).not.toMatch(/\u001b/);
+    expect(err.message.length).toBeLessThan(400);
+  });
+});
