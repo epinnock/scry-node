@@ -242,6 +242,27 @@ counts; there is no `links.live`. If the app includes Scry's dev-only probe (see
 [scry-sample-rn](https://github.com/scryorg/scry-sample-rn) `.rnstorybook/scryProbe.tsx`), each story also
 gets an `rn-fiber` structure tree. Output goes to `.scry/capture` (`--out`).
 
+#### The Dynamic Island and other hardware overlays
+
+A simulator screenshot includes the Dynamic Island / notch / status bar, and the crop is the story's
+`scry-root` view. A component that renders at the very top of the screen is therefore captured with the
+island painted over it. `capture rn` does not crop a different region or hide the overlay. Instead, on iOS
+it reads the story root's frame from the app's probe and, when the frame starts inside the device's top
+unsafe area (59 pt on iPhone 15/16, 62 pt on 16 Pro, 47 pt on 12-14, from a table keyed on the simulator
+name), it prints a warning per story and writes `"x-scry": { "captureWarnings": ["overlaps_top_unsafe_area"] }`
+on that capture in `scf.json`.
+
+To fix the captures, wrap every story in a `SafeAreaView` decorator
+(`react-native-safe-area-context`) in `.rnstorybook/preview.tsx` so components render below the island:
+
+```tsx
+decorators: [(Story) => <SafeAreaProvider><SafeAreaView edges={['top']}><Story /></SafeAreaView></SafeAreaProvider>]
+```
+
+`--safe-area-inset <points>` sets the top unsafe-area height used for the check when your device is not in
+the table (or to be stricter); it does not move or crop anything. Requires the app's Scry probe, since the
+frame comes from it.
+
 ### Options
 
 The CLI is configured through a combination of command-line options and environment variables. Command-line options always take precedence.

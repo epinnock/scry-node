@@ -833,6 +833,7 @@ async function main() {
                     .option('metro', { describe: 'Start Metro with STORYBOOK_ENABLED=true when the Storybook channel is not already up', type: 'boolean', default: true })
                     .option('ws-port', { describe: 'Storybook channel port', type: 'number', default: 7007 })
                     .option('settle-timeout', { describe: 'Per-story budget in ms to render and settle (two identical frames)', type: 'number', default: 10000 })
+                    .option('safe-area-inset', { describe: 'iOS: top unsafe-area height in points used to flag captures whose story root starts inside it (default: from the simulator model). Flagged captures get x-scry.captureWarnings ["overlaps_top_unsafe_area"]; wrap your stories in a SafeAreaView decorator', type: 'number' })
                     .option('structure', { describe: 'Write an rn-fiber structure tree per story when the app exposes one', type: 'boolean', default: true })
                     .option('verbose', { describe: 'Enable verbose logging', type: 'boolean' });
             }, async (argv) => {
