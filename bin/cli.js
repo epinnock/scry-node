@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { zipDirectory } = require('../lib/archive.js');
-const { getApiClient, uploadBuild } = require('../lib/apiClient.js');
+const { getApiClient, uploadBuild, sanitizeServerText } = require('../lib/apiClient.js');
 const { createLogger } = require('../lib/logger.js');
 const { ApiError } = require('../lib/errors.js');
 const { loadConfig } = require('../lib/config.js');
@@ -610,29 +610,42 @@ function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbc
     return reportNoMetadataProduced(sbcovFailure, logger);
 }
 
+/** The parsed argv of the running command (set by middleware); handleError reads --verbose from it. */
+let currentArgv = {};
+
+/**
+ * The one place every CLI failure ends. Prints a one-line human message, the
+ * `Ref: <id>` of the failing response (when it had one) and a suggestion;
+ * reports to Sentry (tagged with the request id) and flushes before exiting
+ * non-zero. The stack is printed only with --verbose.
+ */
 async function handleError(error, argv) {
     const logger = createLogger(argv || {});
-    logger.error(`\n❌ Error: ${error.message}`);
+    const err = error instanceof Error ? error : new Error(String(error));
+    // Strip server-provided control sequences, and never echo the API key.
+    let message = sanitizeServerText(err.message || 'Unknown error', 400);
+    const key = argv && (argv.apiKey || argv['api-key']);
+    if (typeof key === 'string' && key.length >= 4) message = message.split(key).join('<redacted>');
+    logger.error(`\n\u274c Error: ${message}`);
 
-    // Report with an allowlisted subset of argv. Sending argv wholesale shipped
-    // the customer's --api-key to Sentry on every error.
-    captureCliError(error, argv);
-
-    // Ensure the event is sent before the process exits
-    await flushTelemetry(2000);
-
-    if (error instanceof ApiError) {
-        if (error.requestId) logger.error(`Ref: ${error.requestId}`);
-        if (error.statusCode === 401) {
+    if (err instanceof ApiError) {
+        if (err.requestId) logger.error(`Ref: ${sanitizeServerText(err.requestId, 64)}`);
+        if (err.statusCode === 401) {
             logger.error('Suggestion: Check that your API key is correct and has not expired.');
-        } else if (error.statusCode >= 500) {
+        } else if (err.statusCode >= 500) {
             logger.error('Suggestion: This seems to be a server-side issue. Please try again later or contact support.');
         }
     }
 
-    if (argv && argv.verbose && error.stack) {
-        logger.debug(error.stack);
+    if (argv && argv.verbose && err.stack) {
+        logger.debug(err.stack);
     }
+
+    // Report with an allowlisted subset of argv. Sending argv wholesale shipped
+    // the customer's --api-key to Sentry on every error.
+    captureCliError(err, argv);
+    // Ensure the event is sent before the process exits
+    try { await flushTelemetry(2000); } catch { /* telemetry must never mask the real error */ }
 
     process.exit(1);
 }
@@ -646,6 +659,17 @@ async function main() {
         // The command handlers registered below do all the work; the parsed argv itself
         // (yargs' .parse() resolution) is never needed here.
         await yargs(hideBin(process.argv))
+            // Every failure surfaces as a rejection of parseAsync (below), handled by handleError;
+            // yargs must not print usage + a raw error and exit on its own. Usage errors (no Error
+            // object, e.g. a bad option) keep yargs' help output.
+            .exitProcess(false)
+            .fail((msg, err, y) => {
+                if (err) throw err;
+                y.showHelp('error');
+                console.error(`\n${msg}`);
+                process.exit(1);
+            })
+            .middleware((a) => { currentArgv = a; })
             .command('$0', 'Deploy Storybook static build', (yargs) => {
                 return yargs
                     .option('dir', {
@@ -1100,10 +1124,10 @@ async function main() {
             .help()
             .alias('help', 'h')
             .version(false)  // Disable built-in version since we use -v for deploy-version
-            .parse();
+            .parseAsync();
 
     } catch (error) {
-        await handleError(error, error.config || {});
+        await handleError(error, currentArgv);
     }
 }
 
