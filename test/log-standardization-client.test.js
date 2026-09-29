@@ -1,10 +1,10 @@
+/* eslint-disable no-control-regex, sonarjs/no-control-regex -- these tests assert that ANSI and control characters are stripped */
 /**
  * log-standardization PR 6 (scry-node): the CLI reads x-scry-request-id, shows
  * it as "Ref: <id>", sends x-scry-client, never prints a server error body, and
  * never falls back to Sentry environment "production".
  */
 const { sentText, sentEvents } = require('./fixtures/sentry-capture-transport');
-const axios = require('axios');
 const { version } = require('../package.json');
 const { ApiError } = require('../lib/errors.js');
 const { getApiClient, uploadFileDirectly, getRequestId } = require('../lib/apiClient.js');
