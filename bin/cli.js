@@ -521,6 +521,7 @@ function reportMetadataUploadFailed(metadataUpload, uploadResult, logger) {
     const build = zip.buildId ? `Build ${zip.buildId}${buildNumberSuffix}` : 'The build';
     logger.error(
         `\n❌ The metadata upload failed (${metadataUpload.error || 'no reason given'}), so NOTHING WILL BE INDEXED.\n` +
+        (metadataUpload.requestId ? `Ref: ${metadataUpload.requestId}\n` : '') +
         HOSTED_NOT_SEARCHABLE + '\n' +
         `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
         '   so it will not show as failed. Re-run this job to index it.'
@@ -621,6 +622,7 @@ async function handleError(error, argv) {
     await flushTelemetry(2000);
 
     if (error instanceof ApiError) {
+        if (error.requestId) logger.error(`Ref: ${error.requestId}`);
         if (error.statusCode === 401) {
             logger.error('Suggestion: Check that your API key is correct and has not expired.');
         } else if (error.statusCode >= 500) {
