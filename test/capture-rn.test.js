@@ -8,6 +8,8 @@ const os = require('os');
 const path = require('path');
 const { encodePng, decodePng } = require('../lib/capture/png.js');
 const { captureStories, buildRnManifest, runCaptureRn, boundedTree, captureKind } = require('../lib/capture/rn.js');
+const { captureWarningsFor } = require('../lib/capture/rn.js');
+const { topUnsafeAreaPt } = require('../lib/capture/ios.js');
 const { validateBundle } = require('../lib/scf.js');
 const { findTestIdBounds } = require('../lib/capture/android.js');
 
@@ -170,5 +172,62 @@ describe('capture rn', () => {
         expect(captureKind('Components/Button')).toBe('component');
         const xml = '<hierarchy><node resource-id="" bounds="[0,0][1080,2400]"/><node resource-id="scry-root" class="android.view.ViewGroup" bounds="[28,110][1052,2325]"/></hierarchy>';
         expect(findTestIdBounds(xml, 'scry-root')).toEqual({ x: 28, y: 110, width: 1024, height: 2215 });
+    });
+});
+
+describe('capture rn: top unsafe area overlap (F129)', () => {
+    const iosDevice = () => ({ ...fakeDevice(), name: 'iPhone 16', os: 'iOS 18.2', method: 'simulator', topUnsafeAreaPt: 59, findRootBounds: undefined });
+    const channelAt = (y) => {
+        const ch = fakeChannel();
+        ch.requestTree = jest.fn(async (id) => ({ requestId: 'r', storyId: id, scale: 3, rootBounds: { x: 0, y, width: 20, height: 30 }, tree: null }));
+        return ch;
+    };
+
+    test('a root starting inside the top unsafe area gets x-scry.captureWarnings, a printed warning and a valid bundle', async () => {
+        const outDir = tmp();
+        const logger = quietLogger();
+        const device = iosDevice();
+        const { captures, skipped, scale } = await captureStories({
+            device, channel: channelAt(5), stories: STORIES.slice(0, 1), outDir, projectDir: outDir, logger, settleTimeoutMs: 1000, frameIntervalMs: 5,
+        });
+        expect(captures[0]['x-scry']).toEqual({ captureWarnings: ['overlaps_top_unsafe_area'] });
+        expect(logger.warn.mock.calls.join('\n')).toContain('overlaps_top_unsafe_area');
+        // The image is not cropped to a different region.
+        expect(captures[0].capture.crop).toBe('root');
+        const manifest = buildRnManifest({ platform: 'ios', device, scale, captures, skipped, declared: 1, toolVersion: 't' });
+        fs.writeFileSync(path.join(outDir, 'scf.json'), JSON.stringify(manifest));
+        const result = validateBundle(outDir);
+        expect(result.errors).toEqual([]);
+        expect(manifest.captures[0]['x-scry'].captureWarnings).toEqual(['overlaps_top_unsafe_area']);
+    });
+
+    test('a root below the inset gets no warning', async () => {
+        const logger = quietLogger();
+        const outDir = tmp();
+        const { captures } = await captureStories({
+            device: iosDevice(), channel: channelAt(120), stories: STORIES.slice(0, 1), outDir, projectDir: outDir, logger, settleTimeoutMs: 1000, frameIntervalMs: 5,
+        });
+        expect(captures[0]['x-scry']).toBeUndefined();
+        expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    test('--safe-area-inset overrides the table, including for a device not in it', async () => {
+        const outDir = tmp();
+        const device = { ...iosDevice(), topUnsafeAreaPt: null };
+        const off = await captureStories({ device, channel: channelAt(30), stories: STORIES.slice(0, 1), outDir, projectDir: outDir, logger: quietLogger(), settleTimeoutMs: 1000, frameIntervalMs: 5 });
+        expect(off.captures[0]['x-scry']).toBeUndefined();
+        const on = await captureStories({ device, channel: channelAt(30), stories: STORIES.slice(0, 1), outDir, projectDir: outDir, logger: quietLogger(), settleTimeoutMs: 1000, frameIntervalMs: 5, safeAreaInset: 59 });
+        expect(on.captures[0]['x-scry']).toEqual({ captureWarnings: ['overlaps_top_unsafe_area'] });
+    });
+
+    test('captureWarningsFor never guesses without a probe frame or inset; topUnsafeAreaPt table', () => {
+        expect(captureWarningsFor(null, 59)).toEqual([]);
+        expect(captureWarningsFor({ rootBounds: { x: 0, y: 0, width: 1, height: 1 } }, undefined)).toEqual([]);
+        expect(captureWarningsFor({ rootBounds: { x: 0, y: 59, width: 1, height: 1 } }, 59)).toEqual([]);
+        expect(topUnsafeAreaPt('iPhone 16')).toBe(59);
+        expect(topUnsafeAreaPt('iPhone 16 Pro Max')).toBe(62);
+        expect(topUnsafeAreaPt('iPhone 14')).toBe(47);
+        expect(topUnsafeAreaPt('iPhone SE (3rd generation)')).toBe(20);
+        expect(topUnsafeAreaPt('Mystery')).toBeNull();
     });
 });
