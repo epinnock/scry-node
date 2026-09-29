@@ -9,7 +9,7 @@ const os = require('os');
 const { zipDirectory } = require('../lib/archive.js');
 const { getApiClient, uploadBuild } = require('../lib/apiClient.js');
 const { createLogger } = require('../lib/logger.js');
-const { AppError, ApiError } = require('../lib/errors.js');
+const { ApiError } = require('../lib/errors.js');
 const { loadConfig } = require('../lib/config.js');
 const { captureScreenshots } = require('../lib/screencap.js');
 const { analyzeStorybook } = require('../lib/analysis.js');
@@ -137,7 +137,7 @@ function installedSbcovVersion() {
     if (process.env.SCRY_SBCOV_CMD) return undefined;
     try {
         return require('@scrymore/scry-sbcov/package.json').version;
-    } catch (_) {
+    } catch {
         return undefined;
     }
 }
@@ -194,6 +194,19 @@ function buildPreUploadTimings({ coverage, manifest, archiveMs, env = process.en
     return { record, budget };
 }
 
+/** The budget-exceeded warning (workflow annotation on GitHub Actions, plus a log line). */
+function reportOverBudget(record, budget, n, stories, fmt, lost, logger, env) {
+    const formula = `${budget.baseS} s + ${budget.perStoryS} s × ${typeof n === 'number' ? n : '?'} stories`;
+    const detail = `Executing ${stories} took ${fmt(record.executeMs)}, over the ${fmt(record.budgetMs)} budget (${formula})` +
+        (lost ? `. Time lost: ${lost}` : '') +
+        '. Set SCRY_EXECUTE_BUDGET_BASE_S / SCRY_EXECUTE_BUDGET_PER_STORY_S to change the budget.';
+    if (env.GITHUB_ACTIONS === 'true') {
+        // A workflow command must start the line, on stdout.
+        process.stdout.write(`::warning title=Scry story execution over budget::${detail.replace(/\r?\n/g, ' ')}\n`);
+    }
+    logger.warn(`⚠️  Story execution took ${fmt(record.executeMs)}, over its ${fmt(record.budgetMs)} budget (${formula}).`);
+}
+
 /**
  * The duration line, and the budget warning when story execution took longer
  * than its budget (G6). A warning, never a failure: a slow run is information.
@@ -205,23 +218,31 @@ function reportExecutionTime(record, budget, logger, env = process.env) {
     if (record.executeMs === undefined) return;
     const fmt = ciTimings.formatDuration;
     const n = record.stories?.declared;
-    const stories = typeof n === 'number' ? `${n} ${n === 1 ? 'story' : 'stories'}` : 'stories';
-    const workers = record.concurrency ? ` (${record.concurrency} ${record.concurrency === 1 ? 'worker' : 'workers'})` : '';
+    const storiesWord = n === 1 ? 'story' : 'stories';
+    const stories = typeof n === 'number' ? `${n} ${storiesWord}` : 'stories';
+    const workerWord = record.concurrency === 1 ? 'worker' : 'workers';
+    const workers = record.concurrency ? ` (${record.concurrency} ${workerWord})` : '';
     const source = record.executeSource === 'deployer-wall' ? ' [sbcov run wall time; this scry-sbcov does not report execution time]' : '';
     const budgetText = record.budgetMs !== undefined ? `, budget ${fmt(record.budgetMs)}` : ', no budget (story count unknown)';
     const lost = ciTimings.describeTimeLost(record.timeLostMs);
-    logger.info(`Story execution: ${stories} in ${fmt(record.executeMs)}${workers}${budgetText}${lost ? `; time lost: ${lost}` : ''}${source}.`);
+    const lostSuffix = lost ? `; time lost: ${lost}` : '';
+    logger.info(`Story execution: ${stories} in ${fmt(record.executeMs)}${workers}${budgetText}${lostSuffix}${source}.`);
 
-    if (record.overBudget) {
-        const formula = `${budget.baseS} s + ${budget.perStoryS} s × ${typeof n === 'number' ? n : '?'} stories`;
-        const detail = `Executing ${stories} took ${fmt(record.executeMs)}, over the ${fmt(record.budgetMs)} budget (${formula})` +
-            (lost ? `. Time lost: ${lost}` : '') +
-            '. Set SCRY_EXECUTE_BUDGET_BASE_S / SCRY_EXECUTE_BUDGET_PER_STORY_S to change the budget.';
-        if (env.GITHUB_ACTIONS === 'true') {
-            // A workflow command must start the line, on stdout.
-            process.stdout.write(`::warning title=Scry story execution over budget::${detail.replace(/\r?\n/g, ' ')}\n`);
-        }
-        logger.warn(`⚠️  Story execution took ${fmt(record.executeMs)}, over its ${fmt(record.budgetMs)} budget (${formula}).`);
+    if (record.overBudget) reportOverBudget(record, budget, n, stories, fmt, lost, logger, env);
+}
+
+/** Log why the ci-timings upload wasn't stored, based on `sent.reason`. */
+function warnNotStoredReason(sent, logger) {
+    if (sent.reason === 'not-supported') {
+        logger.warn('⚠️  CI timings: the upload service does not record CI timings yet; not stored.');
+    } else if (sent.reason === 'rejected') {
+        logger.warn(`⚠️  CI timings: the upload service rejected the CI timings (${sent.detail}); not stored.`);
+    } else if (sent.reason === 'build-not-found') {
+        logger.warn(`⚠️  CI timings: the upload service has the CI-timings route but did not find this build (${sent.detail}); not stored.`);
+    } else if (sent.reason === 'no-build-id') {
+        logger.warn('⚠️  CI timings: the upload service returned no build id, so the final record could not be sent; not stored.');
+    } else {
+        logger.warn(`⚠️  CI timings: could not reach the upload service (${sent.detail}); not stored.`);
     }
 }
 
@@ -249,17 +270,7 @@ async function recordCiTimings({ apiClient, argv, preUpload, uploadMs, totalTime
         }
         if (!sent.stored) {
             summary.notStored += 1;
-            if (sent.reason === 'not-supported') {
-                logger.warn('⚠️  CI timings: the upload service does not record CI timings yet; not stored.');
-            } else if (sent.reason === 'rejected') {
-                logger.warn(`⚠️  CI timings: the upload service rejected the CI timings (${sent.detail}); not stored.`);
-            } else if (sent.reason === 'build-not-found') {
-                logger.warn(`⚠️  CI timings: the upload service has the CI-timings route but did not find this build (${sent.detail}); not stored.`);
-            } else if (sent.reason === 'no-build-id') {
-                logger.warn('⚠️  CI timings: the upload service returned no build id, so the final record could not be sent; not stored.');
-            } else {
-                logger.warn(`⚠️  CI timings: could not reach the upload service (${sent.detail}); not stored.`);
-            }
+            warnNotStoredReason(sent, logger);
         }
         const fmt = ciTimings.formatDuration;
         // "recorded" only when the service kept it; otherwise it was measured and printed here.
@@ -274,12 +285,131 @@ async function recordCiTimings({ apiClient, argv, preUpload, uploadMs, totalTime
         summary.notStored += 1;
         logger.warn(`⚠️  CI timings: not recorded (${err.message}).`);
     }
-    logger.info(summary.notStored
-        ? `CI timings: final record not stored (${summary.notStored}); the build's time is incomplete, the deploy is not affected.`
-        : summary.droppedFields
-            ? `CI timings: stored with the build, ${summary.droppedFields} field(s) dropped by the service.`
-            : 'CI timings: stored with the build.');
+    let finalLine;
+    if (summary.notStored) {
+        finalLine = `CI timings: final record not stored (${summary.notStored}); the build's time is incomplete, the deploy is not affected.`;
+    } else if (summary.droppedFields) {
+        finalLine = `CI timings: stored with the build, ${summary.droppedFields} field(s) dropped by the service.`;
+    } else {
+        finalLine = 'CI timings: stored with the build.';
+    }
+    logger.info(finalLine);
     return summary;
+}
+
+/**
+ * Count what the metadata archive holds and warn about drops, before deciding whether to
+ * upload it. An archive whose metadata.json is [] is what sbcov writes when every story failed
+ * after the browser launched; queuing it produced a build marked `completed` with nothing in
+ * it, and a green run (ISSUES.md #50). Hosting still goes ahead (the preview link stays
+ * useful); the archive is not sent and the run ends red (reportIndexingOutcome).
+ * @returns {{metadataToSend:string|null, emptyArchive:object|null, dropped:object|null, sbcovManifest:object|null}}
+ */
+/** sbcov 0.5.2+ lists every story it could not capture in the archive; read it whatever sbcov's
+ * exit code (a sbcov that ignored --max-dropped still names its drops, and the allowance is
+ * applied here). */
+function readDroppedFromManifest(metadataZipPath, coverage, logger) {
+    const { manifest, error: manifestError } = readSbcovManifest(metadataZipPath);
+    if (manifestError) {
+        logger.warn(`⚠️  ${manifestError}; dropped stories cannot be counted for this build.`);
+        return { sbcovManifest: null, dropped: null };
+    }
+    if (!manifest) return { sbcovManifest: null, dropped: null };
+    const allowed = coverage.effectiveMaxDropped ?? 0;
+    const n = manifest.dropped.length;
+    const reasons = n ? ` (${droppedReasons(manifest.dropped)})` : '';
+    logger.info(`scry-sbcov: ${manifest.captured ?? '?'}/${manifest.declared ?? '?'} stories captured, ${n} not captured${reasons}.`);
+    return { sbcovManifest: manifest, dropped: { n, allowed, reasons, declared: manifest.declared, captured: manifest.captured } };
+}
+
+/** Count what the metadata archive holds; an archive with 0 entries must not be uploaded
+ * (queuing it produced a build marked `completed` with nothing in it — ISSUES.md #50). */
+function checkEmptyArchive(metadataZipPath, coverageReport, logger) {
+    const counted = countMetadataEntries(metadataZipPath);
+    if (counted.count === 0) {
+        return { emptyArchive: { ...describeCapture(coverageReport), note: counted.error }, metadataToSend: null };
+    }
+    if (counted.count === null) {
+        // Could not read it. Send it anyway (the service decides) but say
+        // so: this is not a count of zero.
+        logger.warn(`⚠️  Could not count the stories in the analysis archive (${counted.error}); uploading it anyway.`);
+    } else {
+        logger.info(`Analysis archive holds ${counted.count} captured ${counted.count === 1 ? 'story' : 'stories'}.`);
+    }
+    return { emptyArchive: null, metadataToSend: metadataZipPath };
+}
+
+function analyzeMetadataArchive(coverage, metadataZipPath, coverageReport, logger) {
+    if (coverage.executionUnsupported && coverage.executionUnsupported.length) {
+        logger.warn(
+            `⚠️  The installed scry-sbcov does not support ${coverage.executionUnsupported.join(' / ')}, so SCRY_CONCURRENCY /\n` +
+            '   SCRY_RENDER_TIMEOUT_MS were not applied. Upgrade @scrymore/scry-sbcov to 0.7 or later.'
+        );
+    }
+    if (coverage.maxDroppedUnsupported) {
+        logger.warn(
+            '⚠️  The installed scry-sbcov does not support --max-dropped, so stories that fail to\n' +
+            '   capture are not counted by it. Upgrade @scrymore/scry-sbcov to 0.5.2 or later.'
+        );
+    }
+    let sbcovManifest = null;
+    let dropped = null;
+    let emptyArchive = null;
+    let metadataToSend = metadataZipPath;
+    if (metadataZipPath) {
+        ({ sbcovManifest, dropped } = readDroppedFromManifest(metadataZipPath, coverage, logger));
+    }
+    if (metadataZipPath) {
+        ({ emptyArchive, metadataToSend } = checkEmptyArchive(metadataZipPath, coverageReport, logger));
+    }
+    return { metadataToSend, emptyArchive, dropped, sbcovManifest };
+}
+
+/** Upload the archive + coverage + metadata ZIP; returns everything the rest of the deploy needs. */
+async function uploadDeployment(argv, outPath, coverageReport, metadataToSend, sbcovManifest, coverage, archiveMs, logger) {
+    logger.info('2/3: Uploading to deployment service...');
+    const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
+    // CI timings, pre-upload part: sent with the request that creates the build.
+    const { record: preUpload, budget } = buildPreUploadTimings({ coverage, manifest: sbcovManifest, archiveMs });
+    reportExecutionTime(preUpload, budget, logger);
+    // Which commit this build is of. `version` is a PR number, a branch, a
+    // tag or a short SHA depending on the CI event, so it identifies a
+    // deploy but never a commit — without this a search result cannot say
+    // which code it reflects (P13a).
+    const gitContext = resolveBuildGitContext();
+    if (gitContext.commitSha) {
+        const branchSuffix = gitContext.branch ? ` on ${gitContext.branch}` : '';
+        logger.debug(`Build provenance: ${gitContext.commitSha}${branchSuffix}`);
+    } else {
+        logger.debug('No git context available; build will record no commit SHA');
+    }
+    const uploadTimer = ciTimings.startTimer();
+    const uploadResult = await uploadBuild(
+        apiClient,
+        {
+            project: argv.project,
+            version: argv.version,
+        },
+        {
+            zipPath: outPath,
+            coverageReport,
+            metadataZipPath: metadataToSend,
+            gitContext,
+            ciTimings: preUpload,
+        }
+    );
+    const uploadMs = uploadTimer.stop();
+    // A metadata upload that failed is the essential part of this deploy
+    // failing: no success line may follow it (RCA 2: the log printed
+    // "Archive uploaded" and "Upload complete" after the timeout).
+    const metadataFailed = uploadResult?.metadataUpload?.success === false;
+    if (metadataFailed) {
+        logger.info('Storybook ZIP uploaded; the metadata upload failed (see above and below).');
+    } else {
+        logger.success('✅ Archive uploaded.');
+    }
+    logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
+    return { apiClient, preUpload, uploadResult, uploadMs, metadataFailed };
 }
 
 async function runDeployment(argv) {
@@ -306,57 +436,8 @@ async function runDeployment(argv) {
             logger.info('Running deployment with analysis...');
         }
 
-        // Count what the archive holds before sending it. An archive whose
-        // metadata.json is [] is what sbcov writes when every story failed
-        // after the browser launched; queuing it produced a build marked
-        // `completed` with nothing in it, and a green run (ISSUES.md #50).
-        // Hosting still goes ahead (the preview link stays useful); the
-        // archive is not sent and the run ends red below.
-        let metadataToSend = metadataZipPath;
-        let emptyArchive = null;
-        let dropped = null;
-        let sbcovManifest = null;
-        if (coverage.executionUnsupported && coverage.executionUnsupported.length) {
-            logger.warn(
-                `⚠️  The installed scry-sbcov does not support ${coverage.executionUnsupported.join(' / ')}, so SCRY_CONCURRENCY /\n` +
-                '   SCRY_RENDER_TIMEOUT_MS were not applied. Upgrade @scrymore/scry-sbcov to 0.7 or later.'
-            );
-        }
-        if (coverage.maxDroppedUnsupported) {
-            logger.warn(
-                '⚠️  The installed scry-sbcov does not support --max-dropped, so stories that fail to\n' +
-                '   capture are not counted by it. Upgrade @scrymore/scry-sbcov to 0.5.2 or later.'
-            );
-        }
-        if (metadataZipPath) {
-            // sbcov 0.5.2+ lists every story it could not capture in the archive.
-            // Read it whatever sbcov's exit code: a sbcov that ignored
-            // --max-dropped still names its drops, and the allowance is applied here.
-            const { manifest, error: manifestError } = readSbcovManifest(metadataZipPath);
-            if (manifestError) {
-                logger.warn(`⚠️  ${manifestError}; dropped stories cannot be counted for this build.`);
-            } else if (manifest) {
-                sbcovManifest = manifest;
-                const allowed = coverage.effectiveMaxDropped ?? 0;
-                const n = manifest.dropped.length;
-                const reasons = n ? ` (${droppedReasons(manifest.dropped)})` : '';
-                logger.info(`scry-sbcov: ${manifest.captured ?? '?'}/${manifest.declared ?? '?'} stories captured, ${n} not captured${reasons}.`);
-                dropped = { n, allowed, reasons, declared: manifest.declared, captured: manifest.captured };
-            }
-        }
-        if (metadataZipPath) {
-            const counted = countMetadataEntries(metadataZipPath);
-            if (counted.count === 0) {
-                emptyArchive = { ...describeCapture(coverageReport), note: counted.error };
-                metadataToSend = null;
-            } else if (counted.count === null) {
-                // Could not read it. Send it anyway (the service decides) but
-                // say so: this is not a count of zero.
-                logger.warn(`⚠️  Could not count the stories in the analysis archive (${counted.error}); uploading it anyway.`);
-            } else {
-                logger.info(`Analysis archive holds ${counted.count} captured ${counted.count === 1 ? 'story' : 'stories'}.`);
-            }
-        }
+        const { metadataToSend, emptyArchive, dropped, sbcovManifest } =
+            analyzeMetadataArchive(coverage, metadataZipPath, coverageReport, logger);
 
         // 1. Archive only the static Storybook files.
         logger.info(`1/3: Zipping directory '${argv.dir}'...`);
@@ -367,47 +448,8 @@ async function runDeployment(argv) {
         logger.debug(`Archive size: ${fs.statSync(outPath).size} bytes`);
 
         // 2. Upload Storybook ZIP + coverage + metadata ZIP (if present).
-        logger.info('2/3: Uploading to deployment service...');
-        const apiClient = getApiClient(argv.apiUrl, argv.apiKey);
-        // CI timings, pre-upload part: sent with the request that creates the build.
-        const { record: preUpload, budget } = buildPreUploadTimings({ coverage, manifest: sbcovManifest, archiveMs });
-        reportExecutionTime(preUpload, budget, logger);
-        // Which commit this build is of. `version` is a PR number, a branch, a
-        // tag or a short SHA depending on the CI event, so it identifies a
-        // deploy but never a commit — without this a search result cannot say
-        // which code it reflects (P13a).
-        const gitContext = resolveBuildGitContext();
-        if (gitContext.commitSha) {
-            logger.debug(`Build provenance: ${gitContext.commitSha}${gitContext.branch ? ` on ${gitContext.branch}` : ''}`);
-        } else {
-            logger.debug('No git context available; build will record no commit SHA');
-        }
-        const uploadTimer = ciTimings.startTimer();
-        const uploadResult = await uploadBuild(
-            apiClient,
-            {
-                project: argv.project,
-                version: argv.version,
-            },
-            {
-                zipPath: outPath,
-                coverageReport,
-                metadataZipPath: metadataToSend,
-                gitContext,
-                ciTimings: preUpload,
-            }
-        );
-        const uploadMs = uploadTimer.stop();
-        // A metadata upload that failed is the essential part of this deploy
-        // failing: no success line may follow it (RCA 2: the log printed
-        // "Archive uploaded" and "Upload complete" after the timeout).
-        const metadataFailed = uploadResult?.metadataUpload?.success === false;
-        if (metadataFailed) {
-            logger.info('Storybook ZIP uploaded; the metadata upload failed (see above and below).');
-        } else {
-            logger.success('✅ Archive uploaded.');
-        }
-        logger.debug(`Upload result: ${JSON.stringify(uploadResult)}`);
+        const { apiClient, preUpload, uploadResult, uploadMs, metadataFailed } =
+            await uploadDeployment(argv, outPath, coverageReport, metadataToSend, sbcovManifest, coverage, archiveMs, logger);
 
         await postPRComment(buildDeployResult(argv, coverageSummary, uploadResult), coverageSummary);
 
@@ -446,111 +488,95 @@ const HOSTED_NOT_SEARCHABLE =
     '   The Storybook is hosted and browsable, but no component will be\n' +
     '   searchable from this build.';
 
-/**
- * Say what happened to indexing, and set the exit code from it.
- *
- * The rule (ISSUES.md #24, #50): a deploy that was asked to index and will
- * index nothing ends with exit code 1. The Storybook is hosted either way.
- */
-function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, dropped = null, logger }) {
-    const metadataUpload = uploadResult?.metadataUpload || null;
-
-    if (!argv.withAnalysis) {
-        logger.info(`\nℹ️  Analysis skipped (${analysis.optOut || 'not requested'}): this build is hosted but NOT searchable.`);
-        if (sbcovFailure) {
-            // Coverage is optional here; the report is what failed.
-            logger.warn(`⚠️  Coverage report not produced: ${sbcovFailure.reason}.`);
-        }
-        return;
+/** No analysis was requested: hosted but not searchable. */
+function reportAnalysisSkipped(analysis, sbcovFailure, logger) {
+    logger.info(`\nℹ️  Analysis skipped (${analysis.optOut || 'not requested'}): this build is hosted but NOT searchable.`);
+    if (sbcovFailure) {
+        // Coverage is optional here; the report is what failed.
+        logger.warn(`⚠️  Coverage report not produced: ${sbcovFailure.reason}.`);
     }
+}
 
-    if (emptyArchive) {
-        // Checked first: the archive was not sent, so whatever the upload
-        // result says about metadata is not about this build's stories.
-        process.exitCode = 1;
-        const of = emptyArchive.total !== null ? ` of ${emptyArchive.total}` : '';
-        logger.error(
-            `\n❌ Analysis captured 0${of} stories, so NOTHING WILL BE INDEXED.\n` +
-            (emptyArchive.firstError ? `   First capture error: ${emptyArchive.firstError}\n` : '') +
-            (emptyArchive.note ? `   The archive: ${emptyArchive.note}.\n` : '') +
-            (sbcovFailure ? `   ${sbcovFailure.reason}.\n` : '') +
-            '   The empty archive was not uploaded and no build was queued.\n' +
-            HOSTED_NOT_SEARCHABLE
-        );
-        return;
-    }
-
-    if (metadataUpload && metadataUpload.success === false) {
-        // apiClient turns a rejected upload into {success:false}; the old
-        // check tested only that the object existed, printed "uploaded but
-        // not queued" and exited 0.
-        process.exitCode = 1;
-        const zip = uploadResult?.zipUpload || {};
-        const build = zip.buildId
-            ? `Build ${zip.buildId}${zip.buildNumber !== undefined ? ` (#${zip.buildNumber})` : ''}`
-            : 'The build';
-        logger.error(
-            `\n❌ The metadata upload failed (${metadataUpload.error || 'no reason given'}), so NOTHING WILL BE INDEXED.\n` +
-            HOSTED_NOT_SEARCHABLE + '\n' +
-            `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
-            '   so it will not show as failed. Re-run this job to index it.'
-        );
-        return;
-    }
-
-    if (metadataUpload?.queued) {
-        logger.info(
-            '\n⏳ Indexing has been queued, not finished.\n' +
-            '   This command cannot confirm it succeeded. Components will not be\n' +
-            '   searchable until processing completes, and a failed build reports\n' +
-            '   nothing here. Before relying on search, confirm the build shows\n' +
-            "   processingStatus 'completed' rather than 'failed'."
-        );
-        const droppedLine = dropped && dropped.n
-            ? `   ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}; see sbcov-manifest.json in the archive.\n`
-            : '';
-        if (sbcovFailure) {
-            // The contract with scry-sbcov (#51): exit 3 = stories were dropped
-            // above --max-dropped, and the archive of the ones that captured
-            // was written. Those are queued above; the run still ends red.
-            process.exitCode = 1;
-            logger.error(
-                `\n❌ ${sbcovFailure.reason}. The stories that were captured are queued for\n` +
-                '   indexing, but this build is incomplete: some components will be\n' +
-                '   missing from search. See the scry-sbcov output above.\n' +
-                droppedLine
-            );
-        } else if (dropped && dropped.n > dropped.allowed) {
-            // sbcov exited 0 but its manifest lists more drops than allowed: an
-            // sbcov that ignored --max-dropped, or one run without it. The
-            // allowance is enforced here too, so any dropped story still ends
-            // the deploy red (after the rest were queued) unless --max-dropped
-            // says otherwise.
-            process.exitCode = 1;
-            logger.error(
-                `\n❌ ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}, more than\n` +
-                `   --max-dropped ${dropped.allowed} allows. The ${dropped.captured ?? 'other'} captured stories are queued; the rest\n` +
-                '   will not be searchable. See sbcov-manifest.json in the archive, or raise\n' +
-                '   --max-dropped (SCRY_MAX_DROPPED) to accept them.'
-            );
-        }
-        return;
-    }
-
-    if (metadataUpload) {
-        process.exitCode = 1;
-        logger.error(
-            '\n❌ Metadata was uploaded but not queued for processing, so NOTHING WILL BE INDEXED.\n' +
-            HOSTED_NOT_SEARCHABLE
-        );
-        return;
-    }
-
+/** Checked first: the archive was not sent, so whatever the upload result says about metadata
+ * is not about this build's stories. */
+function reportEmptyArchive(emptyArchive, sbcovFailure, logger) {
     process.exitCode = 1;
+    const of = emptyArchive.total !== null ? ` of ${emptyArchive.total}` : '';
+    logger.error(
+        `\n❌ Analysis captured 0${of} stories, so NOTHING WILL BE INDEXED.\n` +
+        (emptyArchive.firstError ? `   First capture error: ${emptyArchive.firstError}\n` : '') +
+        (emptyArchive.note ? `   The archive: ${emptyArchive.note}.\n` : '') +
+        (sbcovFailure ? `   ${sbcovFailure.reason}.\n` : '') +
+        '   The empty archive was not uploaded and no build was queued.\n' +
+        HOSTED_NOT_SEARCHABLE
+    );
+}
 
-    // The gap between the branches above, and the most damaging state:
-    // analysis was asked for, produced nothing, and this command used to say
-    // "Upload successful" and stop (ISSUES.md #24).
+/** apiClient turns a rejected upload into {success:false}; the old check tested only that the
+ * object existed, printed "uploaded but not queued" and exited 0. */
+function reportMetadataUploadFailed(metadataUpload, uploadResult, logger) {
+    process.exitCode = 1;
+    const zip = uploadResult?.zipUpload || {};
+    const buildNumberSuffix = zip.buildNumber !== undefined ? ` (#${zip.buildNumber})` : '';
+    const build = zip.buildId ? `Build ${zip.buildId}${buildNumberSuffix}` : 'The build';
+    logger.error(
+        `\n❌ The metadata upload failed (${metadataUpload.error || 'no reason given'}), so NOTHING WILL BE INDEXED.\n` +
+        HOSTED_NOT_SEARCHABLE + '\n' +
+        `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
+        '   so it will not show as failed. Re-run this job to index it.'
+    );
+}
+
+function reportMetadataQueued(sbcovFailure, dropped, logger) {
+    logger.info(
+        '\n⏳ Indexing has been queued, not finished.\n' +
+        '   This command cannot confirm it succeeded. Components will not be\n' +
+        '   searchable until processing completes, and a failed build reports\n' +
+        '   nothing here. Before relying on search, confirm the build shows\n' +
+        "   processingStatus 'completed' rather than 'failed'."
+    );
+    const droppedLine = dropped && dropped.n
+        ? `   ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}; see sbcov-manifest.json in the archive.\n`
+        : '';
+    if (sbcovFailure) {
+        // The contract with scry-sbcov (#51): exit 3 = stories were dropped
+        // above --max-dropped, and the archive of the ones that captured
+        // was written. Those are queued above; the run still ends red.
+        process.exitCode = 1;
+        logger.error(
+            `\n❌ ${sbcovFailure.reason}. The stories that were captured are queued for\n` +
+            '   indexing, but this build is incomplete: some components will be\n' +
+            '   missing from search. See the scry-sbcov output above.\n' +
+            droppedLine
+        );
+    } else if (dropped && dropped.n > dropped.allowed) {
+        // sbcov exited 0 but its manifest lists more drops than allowed: an
+        // sbcov that ignored --max-dropped, or one run without it. The
+        // allowance is enforced here too, so any dropped story still ends
+        // the deploy red (after the rest were queued) unless --max-dropped
+        // says otherwise.
+        process.exitCode = 1;
+        logger.error(
+            `\n❌ ${dropped.n} of ${dropped.declared ?? '?'} stories were not captured${dropped.reasons}, more than\n` +
+            `   --max-dropped ${dropped.allowed} allows. The ${dropped.captured ?? 'other'} captured stories are queued; the rest\n` +
+            '   will not be searchable. See sbcov-manifest.json in the archive, or raise\n' +
+            '   --max-dropped (SCRY_MAX_DROPPED) to accept them.'
+        );
+    }
+}
+
+function reportMetadataNotQueued(logger) {
+    process.exitCode = 1;
+    logger.error(
+        '\n❌ Metadata was uploaded but not queued for processing, so NOTHING WILL BE INDEXED.\n' +
+        HOSTED_NOT_SEARCHABLE
+    );
+}
+
+/** The gap between the branches above, and the most damaging state: analysis was asked for,
+ * produced nothing, and this command used to say "Upload successful" and stop (ISSUES.md #24). */
+function reportNoMetadataProduced(sbcovFailure, logger) {
+    process.exitCode = 1;
     logger.error(
         '\n❌ Analysis produced no metadata, so NOTHING WILL BE INDEXED.\n' +
         HOSTED_NOT_SEARCHABLE + '\n\n' +
@@ -562,6 +588,25 @@ function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbc
         '   Exiting non-zero deliberately: a green build here would mean search\n' +
         '   silently returns nothing. Pass --no-analysis to host without indexing.'
     );
+}
+
+/**
+ * Say what happened to indexing, and set the exit code from it.
+ *
+ * The rule (ISSUES.md #24, #50): a deploy that was asked to index and will
+ * index nothing ends with exit code 1. The Storybook is hosted either way.
+ */
+function reportIndexingOutcome({ argv, analysis, uploadResult, emptyArchive, sbcovFailure, dropped = null, logger }) {
+    const metadataUpload = uploadResult?.metadataUpload || null;
+
+    if (!argv.withAnalysis) return reportAnalysisSkipped(analysis, sbcovFailure, logger);
+    // Checked before the metadata-upload branches: the archive was not sent, so whatever the
+    // upload result says about metadata is not about this build's stories.
+    if (emptyArchive) return reportEmptyArchive(emptyArchive, sbcovFailure, logger);
+    if (metadataUpload && metadataUpload.success === false) return reportMetadataUploadFailed(metadataUpload, uploadResult, logger);
+    if (metadataUpload?.queued) return reportMetadataQueued(sbcovFailure, dropped, logger);
+    if (metadataUpload) return reportMetadataNotQueued(logger);
+    return reportNoMetadataProduced(sbcovFailure, logger);
 }
 
 async function handleError(error, argv) {
@@ -596,7 +641,9 @@ async function main() {
     initTelemetry();
 
     try {
-        const args = await yargs(hideBin(process.argv))
+        // The command handlers registered below do all the work; the parsed argv itself
+        // (yargs' .parse() resolution) is never needed here.
+        await yargs(hideBin(process.argv))
             .command('$0', 'Deploy Storybook static build', (yargs) => {
                 return yargs
                     .option('dir', {
@@ -874,7 +921,8 @@ async function main() {
                 }
 
                 if (result.sbcovFailure) {
-                    logger.error(`Coverage: ${result.sbcovFailure.reason}${report ? ` (report written to ${argv.output})` : ''}`);
+                    const reportSuffix = report ? ` (report written to ${argv.output})` : '';
+                    logger.error(`Coverage: ${result.sbcovFailure.reason}${reportSuffix}`);
                     process.exit(1);
                 }
                 if (!report) {

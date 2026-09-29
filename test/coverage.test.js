@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // Every CI-provider variable lib/coverage.js's resolveCoverageBaseRef() reads
@@ -130,27 +131,30 @@ describe('lib/coverage', () => {
 
     const { runCoverageAnalysis } = require('../lib/coverage.js');
     const outPath = path.join(process.cwd(), `.scry-coverage-report-${fixedNow}.json`);
+    // A unique per-run name under the OS temp dir, not a fixed shared path, so a symlink an
+    // attacker planted at a predictable name can't be followed (sonarjs/publicly-writable-directories).
+    const zipPath = path.join(os.tmpdir(), `scry-coverage-meta-${fixedNow}.zip`);
 
     execSync.mockImplementation(() => {
       fs.writeFileSync(
         outPath,
         JSON.stringify({ summary: { metrics: {}, health: {} }, qualityGate: {}, generatedAt: 'x' })
       );
-      fs.writeFileSync('/tmp/meta.zip', 'zip');
+      fs.writeFileSync(zipPath, 'zip');
     });
 
     const result = await runCoverageAnalysis({
       storybookDir: './storybook-static',
       screenshots: true,
-      outputZipPath: '/tmp/meta.zip',
+      outputZipPath: zipPath,
     });
 
     const calledCommand = execSync.mock.calls.map((c) => c[0]).find((c) => !/ --help$/.test(c));
     expect(calledCommand).toContain('--screenshots');
     expect(calledCommand).toContain('--output-zip');
-    expect(result.metadataZipPath).toBe('/tmp/meta.zip');
+    expect(result.metadataZipPath).toBe(zipPath);
 
-    if (fs.existsSync('/tmp/meta.zip')) fs.unlinkSync('/tmp/meta.zip');
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
   });
 
   test('runCoverageAnalysis() returns null report when tool fails and failOnThreshold=false', async () => {

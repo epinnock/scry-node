@@ -27,6 +27,9 @@ if (process.env.SCF_VENDOR_OFFLINE === '1') {
 }
 
 function lsRemote(options, patterns = []) {
+  // dev/CI-only maintenance script; resolves `git` via PATH like every other git-based tool in
+  // this repo's toolchain (CI runners, local dev shells), no untrusted input reaches argv.
+  // eslint-disable-next-line sonarjs/no-os-command-from-path
   return execFileSync('git', ['ls-remote', ...options, REPO, ...patterns], { encoding: 'utf8' })
     .split('\n')
     .filter(Boolean)
