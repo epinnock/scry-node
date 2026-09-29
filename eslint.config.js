@@ -11,12 +11,6 @@ module.exports = [
       'lib/vendor/scf/**',
       'coverage/**',
       'test/fixtures/**',
-      // Pre-existing, out of capture-sources' scope: its own inline `// eslint-disable-next-line
-      // import/no-dynamic-require, global-require` references a plugin (eslint-plugin-import)
-      // this repo has never installed, which ESLint treats as a hard "rule not found" error that
-      // no rule-severity setting can downgrade to a warning. Excluded rather than edited, per
-      // this pass's scope (fix only capture-sources' own files; record everything else's count).
-      'lib/pr-comment.js',
     ],
   },
   js.configs.recommended,
