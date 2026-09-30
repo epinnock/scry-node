@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+### Minor Changes
+
+- 4000a51: New `upload <dir|zip>` command for Scry Capture Format bundles (local validation with the vendored `@scrymore/scf`, every problem printed, exit 1 on reject; source text only with `--include-source`) and `capture rn` (React Native Storybook on an iOS Simulator or Android emulator → SCF bundle with crops, honest counts and rn-fiber trees). `scry analyze` now uploads an SCF bundle through the bundle route, so its builds are indexed.
+- e82e98f: `upload-images --local` can embed with Gemini Embedding 2: pass `--gemini-api-key` (or `GEMINI_API_KEY`) and a g2 collection (`--collection` / `--milvus-collection`, or `MILVUS_COLLECTION_G2`). Rows are 1024-dim and carry `embed_model`. A Gemini run refuses to write to a non-g2 collection. `--jina-api-key` / `JINA_API_KEY` still work and print a deprecation warning.
+
+### Patch Changes
+
+- 55d4318: A failed API call now ends with `Ref: <id>` (the server's `x-scry-request-id`) and the deployer sends `x-scry-client: scry-deployer/<version>` on every API request. Failure output prints the HTTP status and the server's `error` field only, never the whole response body. Sentry `environment` no longer falls back to `production` when `NODE_ENV` is unset (it is `development`), and the request id is attached to the event as a tag.
+- 5a3944e: `scry upload` validates against the current SCF validator: manifests with an off-schema `capture.method`, `capture.crop`, `kind`, `source.platform` or `structure.origin` are now rejected locally (ENUM_VALUE_INVALID), matching the published schema and the server.
+
 ## 0.9.1
 
 ### Patch Changes
