@@ -99,7 +99,7 @@ describe('conversion', () => {
         const res = await convertFile('/work/my file [1].psd', '.psd', { tools: ['magick'], run });
         expect(res).toMatchObject({ ok: true, family: 'png', width: 10, height: 8 });
         expect(calls).toHaveLength(1);
-        expect(calls[0].args[0]).toBe('psd:/work/my file [1].psd[0]');
+        expect(calls[0].args.filter((a) => a.startsWith('psd:'))).toEqual(['psd:/work/my file [1].psd[0]']);
     });
     test('over 20 MB falls down the ladder to a smaller JPEG', async () => {
         const bigJpeg = Buffer.concat([makeJpeg(10, 8, { exif: false }).subarray(0, -2), Buffer.alloc(21 * 1024 * 1024, 7), Buffer.from([0xff, 0xd9])]);

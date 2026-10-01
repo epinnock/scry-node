@@ -387,9 +387,9 @@ scry import ./bridge-export --dry-run                   # build the bundle, send
 
 - Only the folder you pass is read. Symbolic links are not followed, and nothing is watched or synced.
 - PNG, JPEG and WebP are used as they are. PSD, TIFF, HEIC, PDF and AI are converted on your machine, so the original never leaves it. Conversion needs ImageMagick (`magick`), or `sips` on macOS, or `pdftoppm` for PDF/AI. Without one, those files are reported as skipped.
-- Images over 20 MB or 16384 px are re-encoded to fit.
-- From Bridge's metadata only title, description, keywords, rating and label are read (from the file or a sidecar `.xmp`). Location, camera serial and file paths are never read or sent, and embedded EXIF/XMP/IPTC is removed from the uploaded image.
-- Before uploading, the command prints the counts and what is skipped. The images are then sent to Google Gemini and Jina for AI captioning and embeddings, so it asks for a yes, or `--yes`.
+- Images over 20 MB or 16384 px are re-encoded to fit. Converters run with memory, disk, area and time limits. The home folder and the disk root are refused as the folder to import.
+- From Bridge's metadata only title, description, keywords, rating and label are read (from the file or a sidecar `.xmp`). Location, camera serial and other device data are never read, and embedded EXIF/XMP/IPTC (and anything appended after the end of the image) is removed from the uploaded image. File names and folder paths are not uploaded; the text you wrote in a title, description or keyword is sent as you wrote it, so it is yours to keep clean. The upload also carries the git commit and branch of the repository in the directory you run the command from, which the consent text shows.
+- Before uploading, the command prints the counts and what is skipped. The images are then sent to Google Gemini and Jina for AI captioning and embeddings, so it asks for a yes, or `--yes`. No answer (Ctrl-D, Ctrl-C) counts as no: nothing is sent and the command exits 1.
 
 Status: beta. Conversion of PSD/TIFF/HEIC/PDF/AI is covered by tests with a stand-in converter; try it on a real export and report problems.
 
