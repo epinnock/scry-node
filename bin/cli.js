@@ -25,6 +25,7 @@ const { checkForNewerVersion } = require('../lib/versionCheck.js');
 const { version: DEPLOYER_VERSION } = require('../package.json');
 const ciTimings = require('../lib/ciTimings.js');
 const { runUploadBundle } = require('../lib/uploadCommand.js');
+const { runImport } = require('../lib/importCommand.js');
 const { writeAnalysisBundle } = require('../lib/analysisBundle.js');
 
 async function runAnalysis(argv) {
@@ -825,6 +826,22 @@ async function main() {
                 await runAnalysis(config);
             })
             
+            .command('import <folder>', 'Import a folder exported from Adobe Bridge (beta): converts, keeps keywords and ratings, uploads', (yargs) => {
+                return yargs
+                    .positional('folder', { describe: 'The folder exported from Adobe Bridge (only this folder is read)', type: 'string' })
+                    .option('project', { describe: 'Project ID', type: 'string' })
+                    .option('deploy-version', { alias: 'v', describe: 'Version identifier (default: bundle-<timestamp>)', type: 'string' })
+                    .option('api-key', { describe: 'Project API key', type: 'string' })
+                    .option('api-url', { describe: 'Upload service URL', type: 'string' })
+                    .option('yes', { alias: 'y', describe: 'Confirm that the images may be sent to Gemini and Jina for AI processing (required when not interactive)', type: 'boolean', default: false })
+                    .option('dry-run', { describe: 'Build and validate the bundle only; nothing is sent', type: 'boolean', default: false })
+                    .option('verbose', { describe: 'Enable verbose logging', type: 'boolean' });
+            }, async (argv) => {
+                const config = loadConfig(argv);
+                const outcome = await runImport({ ...config, folder: argv.folder, yes: argv.yes, dryRun: argv.dryRun });
+                process.exitCode = outcome.exitCode;
+            })
+
             .command('upload <path>', 'Validate a Scry Capture Format bundle (dir or .zip) and upload it', (yargs) => {
                 return yargs
                     .positional('path', { describe: 'Bundle directory (scf.json + images) or .zip', type: 'string' })
