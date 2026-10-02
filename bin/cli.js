@@ -833,7 +833,7 @@ async function main() {
                     .option('deploy-version', { alias: 'v', describe: 'Version identifier (default: bundle-<timestamp>)', type: 'string' })
                     .option('api-key', { describe: 'Project API key', type: 'string' })
                     .option('api-url', { describe: 'Upload service URL', type: 'string' })
-                    .option('yes', { alias: 'y', describe: 'Confirm that the images may be sent to Gemini and Jina for AI processing (required when not interactive)', type: 'boolean', default: false })
+                    .option('yes', { alias: 'y', describe: 'Confirm that the images may be sent to OpenAI, Gemini and Jina for AI processing (required when not interactive)', type: 'boolean', default: false })
                     .option('dry-run', { describe: 'Build and validate the bundle only; nothing is sent', type: 'boolean', default: false })
                     .option('verbose', { describe: 'Enable verbose logging', type: 'boolean' });
             }, async (argv) => {
