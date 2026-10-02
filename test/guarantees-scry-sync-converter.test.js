@@ -4,10 +4,11 @@
  *   G3 every file in the folder ends with a verdict (faithful / approximate / failed with a reason and fix).
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const sharp = require('sharp');
 const { scanFolder, convertFile, buildBundle, pictureId, BundleTooBigError, TOO_BIG_MESSAGE } = require('../lib/converter');
-const { validateBundle } = require('../lib/scf.js');
+const { validateBundle, zipBundleDir } = require('../lib/scf.js');
 const { tempDir, write, makePng, makeRealJpeg, xmpPacket, readTree } = require('./helpers/importFixtures.js');
 const fx = require('./helpers/syncFixtures.js');
 
@@ -110,62 +111,159 @@ describe('guarantee-3-every-file-has-a-verdict', () => {
 });
 
 describe('guarantee-2-no-originals-no-paths', () => {
-    const userName = 'annsmith';
-    const winPath = `C:\\Users\\${userName}\\Projects\\Acme\\Design\\Card.psd`;
-    const macPath = `/Users/${userName}/Projects/Acme/Design/Card.psd`;
-
-    test('guarantee-2-no-originals-no-paths: no full path or user name anywhere in a built bundle (Windows and Mac inputs)', async () => {
-        // The synced folder itself lives under a folder named after the user.
-        const root = path.join(work, userName, 'Acme Designs');
-        const xmp = xmpPacket({
-            title: `Home from ${winPath}`,
-            description: `Exported to ${macPath} by ${userName}`,
-            keywords: ['nav', macPath, `\\\\server\\share\\${userName}\\x.png`],
-            rating: 5,
-            label: 'Green',
+    /** The place a user's name and a path can hide: every XMP field, as Windows, Mac and UNC paths. */
+    function leakyXmp(user) {
+        const win = `C:\\Users\\${user}\\Documents\\Work\\logo.psd`;
+        const mac = `/Users/${user}/Desktop/Brand Kit/x.psd`;
+        const unc = `\\\\fileserver\\Design Share\\${user}\\a.psd`;
+        return xmpPacket({
+            title: `Home from ${win}`,
+            description: `Exported to ${mac} by ${user} (see ${unc})`,
+            keywords: ['nav', mac, unc, '~/Desktop/key.psd', `file:///Users/${user}/k.psd`, `by ${user}`, win.toLowerCase(), 'dark mode'],
+            rating: 4,
+            label: `/Users/${user}`,
         });
-        write(root, 'Screens/Home.png', makePng(8, 8, { xmp, text: [['Comment', winPath]] }));
-        write(root, 'Screens/Photo.jpg', makeRealJpeg());
-        write(root, 'Screens/Home.xmp', xmp);
-        write(root, 'Design/Card.psd', fx.makePsd({ width: 4, height: 4, planes: fx.solidPlanes(4, 4, [1, 2, 3]) }));
-        write(root, 'Docs/Deck.pdf', fx.makePdf([{ w: 200, h: 100 }, { w: 100, h: 200 }]));
-        write(root, 'Docs/Legacy.ai', fx.makeAiWithoutPdf());
-        const scan = scanFolder(root);
-        const out = path.join(work, 'g2-out');
-        const { manifest } = await buildBundle({
-            folderUuid: FOLDER,
-            scan,
-            outDir: out,
-            appVersion: APP,
-            folderLabel: `Acme Designs (${macPath})`,
-            convertOptions: { tools: [] },
-        });
+    }
 
-        expect(validateBundle(out).errors).toEqual([]);
+    /** Every byte of the built bundle, plus its zip: manifest, images, entry names. */
+    async function everyByte(out) {
+        const zipPath = `${out}.zip`;
+        const { members } = await zipBundleDir(out, zipPath);
         const tree = readTree(out);
-        const everything = Object.values(tree).map((b) => b.toString('latin1')).join('\n');
-        for (const needle of [userName, 'C:\\', 'C:/', '/Users/', '\\\\server', root, work, 'Projects/Acme', 'Projects\\Acme']) {
-            expect({ needle, found: everything.includes(needle) }).toEqual({ needle, found: false });
-        }
-        // Only converted pictures: no original file's bytes are in the bundle.
-        for (const original of ['Design/Card.psd', 'Docs/Deck.pdf']) {
-            const bytes = fs.readFileSync(path.join(root, original));
-            for (const file of Object.values(tree)) expect(file.equals(bytes)).toBe(false);
-        }
-        expect(Object.keys(tree).every((p) => p === 'scf.json' || /^images\/[0-9a-f]{64}\.(png|jpg)$/.test(p))).toBe(true);
+        const files = { ...tree, '<zip>': fs.readFileSync(zipPath) };
+        return { files, members, manifestText: tree['scf.json'].toString('utf8'), manifest: JSON.parse(tree['scf.json'].toString('utf8')) };
+    }
 
-        // Ids, titles, origin.
-        const home = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Screens/Home.png'));
-        expect(home.title).toEqual(['Acme Designs', 'Home']);
-        expect(home['x-scry-sync'].origin).toEqual({ convertedFrom: 'png', verdict: 'faithful', appVersion: APP });
-        expect(home['x-scry-sync'].keywords).toEqual(['nav']);
-        expect(home['x-scry-sync'].rating).toBe(5);
-        expect(home['x-scry-sync'].label).toBe('Green');
-        expect(Object.keys(home['x-scry-sync'].origin)).toEqual(['convertedFrom', 'verdict', 'appVersion']);
-        const pages = manifest.captures.filter((c) => c.id.startsWith(pictureId(FOLDER, 'Docs/Deck.pdf')));
-        expect(pages.map((c) => [c.id.slice(64), c.name])).toEqual([['#p1', 'Page 1'], ['#p2', 'Page 2']]);
-        expect(manifest.source).toEqual({ kind: 'x-scry-sync', platform: 'other', tool: { name: 'scry-sync', version: APP } });
+    function stringValues(node, out = []) {
+        if (typeof node === 'string') out.push(node);
+        else if (Array.isArray(node)) node.forEach((n) => stringValues(n, out));
+        else if (node && typeof node === 'object') Object.entries(node).forEach(([k, v]) => (k === '$schema' || k === 'image' ? null : stringValues(v, out)));
+        return out;
+    }
+
+    const wholeWord = (name) => new RegExp(`(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu');
+
+    function expectNothingLeaks({ built, user, root, ignoreTitles = false }) {
+        const { files, members, manifestText, manifest } = built;
+        const needles = [root, root.replace(/\//g, '\\'), work, work.replace(/\//g, '\\'), 'C:\\', 'C:/', '/Users/', '/home/', '\\\\fileserver', 'Design Share', 'fileserver', 'Documents\\Work', 'Desktop/Brand Kit', 'file:'];
+        const names = [...new Set([user, user.normalize('NFC'), user.normalize('NFD')])];
+        // 1. EVERY byte of every file and of the zip: the root, drives, shares and the user's name.
+        for (const [file, bytes] of Object.entries(files)) {
+            for (const needle of [...needles, ...names]) {
+                for (const variant of new Set([needle, needle.normalize('NFC'), needle.normalize('NFD')])) {
+                    expect({ file, needle, found: bytes.includes(Buffer.from(variant, 'utf8')) }).toEqual({ file, needle, found: false });
+                }
+            }
+        }
+        // 2. The user's name as a whole word, in any case, anywhere in the manifest text.
+        for (const name of names) expect({ name, found: wholeWord(name).test(ignoreTitles ? JSON.stringify(manifest.captures.map((c) => c['x-scry-sync'])) : manifestText) }).toEqual({ name, found: false });
+        // 3. Values that should have no separator have none: every string in the manifest except `$schema` and `image`.
+        for (const value of stringValues(manifest)) {
+            expect({ value, separator: /[\\/]/.test(value), drive: /(^|[^\p{L}\p{N}])[A-Za-z]:(?=\S)/u.test(value) }).toEqual({ value, separator: false, drive: false });
+        }
+        // 4. Entry names are the images' hashes and scf.json, nothing else.
+        for (const name of members) expect(name).toMatch(/^(scf\.json|images\/[0-9a-f]{64}\.(png|jpg))$/);
+        for (const capture of manifest.captures) expect(capture.image).toMatch(/^images\/[0-9a-f]{64}\.(png|jpg)$/);
+    }
+
+    const users = ['Ann Smith', 'Zoë Müller', 'annsmith'];
+    let counter = 0;
+
+    test.each(users)('guarantee-2-no-originals-no-paths: nothing of a path or of the user name "%s" is in any byte of a built bundle', async (user) => {
+        counter += 1;
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: user });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue(`/home/${user}`);
+        try {
+            // The synced folder lives under a folder named after the user (spaces, accents), and is itself named with a space.
+            const root = path.join(work, `g2-${counter}`, user, 'Acme Designs');
+            const xmp = leakyXmp(user);
+            write(root, 'Screens/Home.png', makePng(8, 8, { xmp, text: [['Comment', `C:\\Users\\${user}\\x.png`]] }));
+            write(root, 'Screens/Home.xmp', xmp);
+            write(root, 'Screens/Attr.png', makePng(8, 8, { xmp: xmpPacket({ title: `/Users/${user}/Desktop/a.psd`, label: `D:\\${user}`, form: 'attribute' }) }));
+            write(root, 'Screens/Photo.jpg', makeRealJpeg());
+            write(root, 'Design/Card.psd', fx.makePsd({ width: 4, height: 4, planes: fx.solidPlanes(4, 4, [1, 2, 3]) }));
+            write(root, 'Docs/Deck.pdf', fx.makePdf([{ w: 200, h: 100 }, { w: 100, h: 200 }]));
+            write(root, 'Docs/Legacy.ai', fx.makeAiWithoutPdf());
+            write(root, `C:\\Users\\${user}\\Documents\\logo.png`, makePng(8, 8)); // a file NAMED like a Windows path
+            write(root, `Screens/${user.replace(' ', '_')}-note.txt`, 'text');
+            const scan = scanFolder(root);
+
+            for (const folderLabel of [`Acme Designs (/Users/${user}/Projects)`, `C:\\Users\\${user}\\Brand Kit`, `\\\\fileserver\\Design Share\\${user}`, root]) {
+                const out = path.join(work, `g2-out-${counter}-${Buffer.from(folderLabel).toString('hex').slice(0, 12)}`);
+                const { manifest } = await buildBundle({ folderUuid: FOLDER, scan, outDir: out, appVersion: APP, folderLabel, convertOptions: { tools: [] } });
+                expect(validateBundle(out).errors).toEqual([]);
+                expectNothingLeaks({ built: await everyByte(out), user, root });
+                // The label held a location (or the user's name): it is dropped whole, the title is the file name alone.
+                const home = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Screens/Home.png'));
+                expect(home.title).toEqual(['Home']);
+                // Whole values only: the clean keywords stay as they were, the leaky ones are gone.
+                expect(home['x-scry-sync'].keywords).toEqual(['nav', 'dark mode']);
+                expect(home['x-scry-sync'].rating).toBe(4);
+                expect(home['x-scry-sync']).not.toHaveProperty('title');
+                expect(home['x-scry-sync']).not.toHaveProperty('description');
+                expect(home['x-scry-sync']).not.toHaveProperty('label');
+                const attr = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Screens/Attr.png'));
+                expect(attr['x-scry-sync']).not.toHaveProperty('title');
+                expect(attr['x-scry-sync']).not.toHaveProperty('label');
+                // The file named like a path is refused with a verdict, never captured.
+                expect(manifest.captures.some((c) => c.title.some((t) => /logo/.test(t)))).toBe(false);
+                expect(manifest.counts.skipped.map((x) => x.reason)).toContain('filtered');
+            }
+            // Only converted pictures: no original file's bytes are in the bundle.
+            const out = path.join(work, `g2-out-${counter}-orig`);
+            await buildBundle({ folderUuid: FOLDER, scan, outDir: out, appVersion: APP, convertOptions: { tools: [] } });
+            const tree = readTree(out);
+            for (const original of ['Design/Card.psd', 'Docs/Deck.pdf']) {
+                const bytes = fs.readFileSync(path.join(root, original));
+                for (const file of Object.values(tree)) expect(file.equals(bytes)).toBe(false);
+            }
+        } finally {
+            osUser.mockRestore();
+            osHome.mockRestore();
+        }
+    }, 120_000);
+
+    test('guarantee-2-no-originals-no-paths: clean metadata and a clean folder label pass through unchanged', async () => {
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'Ann Smith' });
+        try {
+            const root = path.join(work, 'g2-clean', 'Ann Smith', 'Acme Designs');
+            write(root, 'Screens/Home.png', makePng(8, 8, { xmp: xmpPacket({ title: 'Home screen: v2 (final)', description: 'The "Ann" button, dark mode', keywords: ['nav', 'dark mode', 'Zoë'], rating: 5, label: 'Green' }) }));
+            write(root, 'Screens/boxuser-brand.png', makePng(8, 8, { shade: 40 }));
+            write(root, 'Screens/Zoë Müller.png', makePng(8, 8, { shade: 50 }));
+            write(root, 'Screens/Plan A.png', makePng(8, 8, { shade: 60 }));
+            const out = path.join(work, 'g2-clean-out');
+            const { manifest } = await buildBundle({ folderUuid: FOLDER, scan: scanFolder(root), outDir: out, appVersion: APP, folderLabel: 'Acme Designs', convertOptions: { tools: [] } });
+            const byId = (rel) => manifest.captures.find((c) => c.id === pictureId(FOLDER, rel));
+            expect(byId('Screens/Home.png').title).toEqual(['Acme Designs', 'Home']);
+            expect(byId('Screens/Home.png')['x-scry-sync']).toMatchObject({ title: 'Home screen: v2 (final)', description: 'The "Ann" button, dark mode', keywords: ['nav', 'dark mode', 'Zoë'], rating: 5, label: 'Green' });
+            expect(byId('Screens/Home.png').tags).toEqual(['nav', 'dark mode', 'Zoë']);
+            // File names are titles as they are: a name that merely contains "boxuser" or a user's name keeps its title.
+            expect(byId('Screens/boxuser-brand.png').title).toEqual(['Acme Designs', 'boxuser-brand']);
+            expect(byId('Screens/Zoë Müller.png').title).toEqual(['Acme Designs', 'Zoë Müller']);
+            expect(byId('Screens/Plan A.png').title).toEqual(['Acme Designs', 'Plan A']);
+        } finally {
+            osUser.mockRestore();
+        }
     }, 60_000);
+
+    test('guarantee-2-no-originals-no-paths: a user named like a word in a title does not mangle other words (whole-word match, not substring)', () => {
+        const { makeLeakCheck } = require('../lib/converter/privacy.js');
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'Ann Smith' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/ann');
+        const leaks = makeLeakCheck({ root: '/work/Acme', names: ['art'] });
+        osUser.mockRestore();
+        osHome.mockRestore();
+        expect(leaks('Ann Smith')).toBe(true);
+        expect(leaks('made by ann smith, final')).toBe(true);
+        expect(leaks('Annette Smithson')).toBe(false);
+        expect(leaks('Smart cart')).toBe(false); // "art" inside words
+        expect(leaks('boxuser-brand')).toBe(false);
+        expect(leaks('the art of it')).toBe(true); // the name as a whole word
+        expect(leaks('Art-director')).toBe(true); // a hyphen ends a word
+        expect(leaks('Work in /WORK/acme folder')).toBe(true);
+        expect(leaks('c:\\work\\acme')).toBe(true);
+        expect(leaks('Home screen')).toBe(false);
+    });
 
     test('a Windows-style and a Mac-style relative path of the same file give the same capture id', () => {
         expect(pictureId(FOLDER, 'Design\\Card.psd')).toBe(pictureId(FOLDER, 'Design/Card.psd'));

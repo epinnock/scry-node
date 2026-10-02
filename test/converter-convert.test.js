@@ -172,16 +172,19 @@ describe('PNG / JPEG / WebP / TIFF / HEIC', () => {
     });
 
     test('a Display P3 PNG is converted to sRGB, not just stripped', async () => {
-        const p3 = await fx.makeP3Png(16, 16, [255, 0, 0]);
-        // The stored values are P3 numbers; read as sRGB they would be wrong.
-        const stored = await sharp(p3, { ignoreIcc: true }).removeAlpha().raw().toBuffer();
-        expect([...stored.subarray(0, 3)]).not.toEqual([255, 0, 0]);
+        // A mid-tone, non-primary colour: pure red clips to 255,0,0 in sRGB either way and would pass a stripped copy.
+        const stored = [190, 120, 60];
+        const p3 = await fx.makeP3Png(16, 16, stored);
+        // Setup check: the file stores exactly these numbers (the profile was injected, pixels not transformed) and carries the P3 profile.
+        expect([...(await sharp(p3, { ignoreIcc: true }).removeAlpha().raw().toBuffer()).subarray(0, 3)]).toEqual(stored);
+        expect((await sharp(p3).metadata()).icc).toBeDefined();
+        const expected = fx.p3ToSrgb(stored);
+        // The conversion must move the numbers: a stripped copy (stored values read as sRGB) is clearly off.
+        expect(Math.max(...expected.map((v, i) => Math.abs(v - stored[i])))).toBeGreaterThanOrEqual(8);
         const r = await convert('p3.png', p3);
         expect(r.verdict).toBe('faithful');
-        const [red, green, blue] = await fx.pixel(r.pictures[0].bytes);
-        expect(red).toBeGreaterThan(250);
-        expect(green).toBeLessThan(6);
-        expect(blue).toBeLessThan(6);
+        const actual = await fx.pixel(r.pictures[0].bytes);
+        for (let i = 0; i < 3; i += 1) expect(Math.abs(actual[i] - expected[i])).toBeLessThanOrEqual(2);
         expect((await sharp(r.pictures[0].bytes).metadata()).icc).toBeUndefined();
     });
 

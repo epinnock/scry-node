@@ -2,6 +2,7 @@
  * Generated fixtures for the Scry Sync converter tests: PSD/PSB, PDF, AI and InDesign files built byte by byte.
  * No real customer file is used anywhere.
  */
+const zlib = require('zlib');
 const sharp = require('sharp');
 
 function u16(n) {
@@ -121,12 +122,54 @@ function makeIndd() {
     return Buffer.concat([Buffer.from([0x06, 0x06, 0xed, 0xf5, 0xd8, 0x1d, 0x46, 0xe5, 0xbd, 0x31, 0xef, 0xe7, 0xfe, 0x74, 0xb7, 0x1d]), Buffer.alloc(4080)]);
 }
 
-/** A PNG of one colour tagged with sharp's built-in Display P3 profile. */
-function makeP3Png(width = 16, height = 16, rgb = [255, 0, 0]) {
-    return sharp({ create: { width, height, channels: 3, background: { r: rgb[0], g: rgb[1], b: rgb[2] } } })
-        .withIccProfile('p3', { attach: true })
-        .png()
-        .toBuffer();
+function crc32(buf) {
+    let c;
+    let crc = 0xffffffff;
+    for (let n = 0; n < buf.length; n += 1) {
+        c = (crc ^ buf[n]) & 0xff;
+        for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        crc = (crc >>> 8) ^ c;
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** A PNG with an `iCCP` chunk holding `icc` inserted before the first IDAT; the pixel values are NOT touched. */
+function injectIccProfile(png, icc, name = 'profile') {
+    const data = Buffer.concat([Buffer.from(`${name}\0\0`, 'latin1'), zlib.deflateSync(icc)]);
+    const type = Buffer.from('iCCP', 'latin1');
+    const chunk = Buffer.concat([u32(data.length), type, data, u32(crc32(Buffer.concat([type, data])))]);
+    let at = 8;
+    while (png.toString('latin1', at + 4, at + 8) !== 'IDAT') at += 12 + png.readUInt32BE(at);
+    return Buffer.concat([png.subarray(0, at), chunk, png.subarray(at)]);
+}
+
+/**
+ * A PNG whose stored numbers are `rgb` as DISPLAY P3 values: the pixels are written as given (no colour transform)
+ * and sharp's Display P3 profile is injected as a chunk, as a camera or Photoshop would tag it.
+ */
+async function makeP3Png(width = 16, height = 16, rgb = [200, 130, 70]) {
+    const icc = (await sharp({ create: { width: 1, height: 1, channels: 3, background: '#808080' } }).withIccProfile('p3', { attach: true }).png().toBuffer().then((b) => sharp(b).metadata())).icc;
+    const plain = await sharp({ create: { width, height, channels: 3, background: { r: rgb[0], g: rgb[1], b: rgb[2] } } }).png().toBuffer();
+    return injectIccProfile(plain, icc, 'Display P3');
+}
+
+/**
+ * Independent expected sRGB value of a Display P3 colour (8-bit in, 8-bit out): the textbook path (CSS Color 4),
+ * P3 transfer curve -> linear P3 -> XYZ (D65) -> linear sRGB -> sRGB curve, written out here with no library.
+ */
+function p3ToSrgb(rgb) {
+    const decode = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    const encode = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+    const [r, g, b] = rgb.map((v) => decode(v / 255));
+    const x = 0.4865709486482162 * r + 0.26566769316909306 * g + 0.1982172852343625 * b;
+    const y = 0.2289745640697488 * r + 0.6917385218365064 * g + 0.079286914093745 * b;
+    const z = 0.04511338185890264 * g + 1.043944368900976 * b;
+    const lin = [
+        3.2409699419045226 * x - 1.537383177570094 * y - 0.4986107602930034 * z,
+        -0.9692436362808796 * x + 1.8759675015077202 * y + 0.04155505740717559 * z,
+        0.05563007969699366 * x - 0.20397695888897652 * y + 1.0569715142428786 * z,
+    ];
+    return lin.map((v) => Math.round(Math.min(1, Math.max(0, encode(Math.min(1, Math.max(0, v))))) * 255));
 }
 
 /** A CMYK JPEG (with the profile libvips uses, so it carries an ICC profile). */
@@ -143,4 +186,4 @@ async function pixel(bytes, x = 0, y = 0) {
     return [...data.subarray(at, at + 3)];
 }
 
-module.exports = { makePsd, solidPlanes, makePdf, makeAiWithPdf, makeAiWithoutPdf, makeIndd, makeP3Png, makeCmykJpeg, pixel, packBits };
+module.exports = { makePsd, solidPlanes, makePdf, makeAiWithPdf, makeAiWithoutPdf, makeIndd, makeP3Png, injectIccProfile, p3ToSrgb, makeCmykJpeg, pixel, packBits };
