@@ -90,7 +90,7 @@ describe('scry import', () => {
         const poster = bundle.manifest.captures.find((c) => (c.tags || []).includes('poster'));
         expect(poster['x-adobe-bridge']).toEqual({ keywords: ['poster', 'print'], rating: 5 });
         expect(svc.state.requests[0].headers['x-scry-client']).toMatch(/^scry-deployer\//);
-        expect(rec.lines.join('\n')).toMatch(/sent to Google Gemini and Jina/);
+        expect(rec.lines.join('\n')).toMatch(/sent to OpenAI, Google Gemini and Jina/);
         // the converter ran with an explicit coder prefix and no shell string
         const psdCall = calls.find((c) => c.args.some((a) => a.startsWith('psd:')));
         expect(psdCall.file).toBe('magick');
@@ -513,7 +513,9 @@ describe('scry import: telemetry, prompt, terminal and folder rules', () => {
         expect(text).toMatch(/What is sent: the image files/);
         expect(text).toMatch(/title, description, keywords, rating and label/);
         expect(text).toMatch(/git commit abc1234def56 on branch feature\/x/);
-        expect(text).toMatch(/Google Gemini and Jina/);
+        expect(text).toMatch(/OpenAI, Google Gemini and Jina/);
+        expect(text).toMatch(/OpenAI writes a short description of each picture and sees only the picture/);
+        expect(text).toMatch(/Rating and label stay in Scry/);
         expect(text).not.toMatch(/file-path data is never/);
         const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
         expect(readme).not.toMatch(/file paths are never read or sent/);
