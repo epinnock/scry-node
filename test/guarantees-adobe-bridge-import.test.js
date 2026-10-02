@@ -522,6 +522,21 @@ describe('scry import: telemetry, prompt, terminal and folder rules', () => {
         expect(readme).toMatch(/git commit and branch/);
     });
 
+    test('F25: the consent line names every service that sees the pictures, with its job', async () => {
+        const folder = path.join(work, 'export');
+        write(folder, 'a.png', makePng());
+        const rec = recorder();
+        await runImport(argvFor(folder), { ...rec, deps: { tools: [] } });
+        const text = rec.lines.join('\n');
+        for (const provider of ['OpenAI', 'Google Gemini', 'Jina']) expect(text).toContain(provider);
+        expect(text).toMatch(/OpenAI writes a short description of each picture/);
+        expect(text).toMatch(/Google Gemini and Jina turn each picture/);
+        const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+        expect(readme).toMatch(/4096 px on the longest side and 4 MiB/);
+        expect(readme).toMatch(/2048 px and 4 MiB/);
+        expect(readme).not.toMatch(/20 MB or 16384 px/);
+    });
+
     test('F26: every ImageMagick call carries memory, map, time, disk and area limits', async () => {
         const calls = [];
         const run = (file, args) => {
