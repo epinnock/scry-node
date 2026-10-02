@@ -12,6 +12,6 @@ const fx = require('./syncFixtures.js');
     const [pages, dir] = [Number(process.argv[2]), process.argv[3]];
     const file = path.join(dir, 'many.pdf');
     fs.writeFileSync(file, fx.makePdf(Array.from({ length: pages }, () => ({ w: 595, h: 842 }))));
-    const result = await convertFile(file, { tools: [] });
+    const result = await convertFile(file, { root: dir, tools: [] });
     process.stdout.write(JSON.stringify({ verdict: result.verdict, pictures: result.pictures.length, peakRssMb: Math.round(process.resourceUsage().maxRSS / 1024) }));
 })();

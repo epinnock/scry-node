@@ -259,10 +259,110 @@ describe('guarantee-2-no-originals-no-paths', () => {
         expect(leaks('Smart cart')).toBe(false); // "art" inside words
         expect(leaks('boxuser-brand')).toBe(false);
         expect(leaks('the art of it')).toBe(true); // the name as a whole word
-        expect(leaks('Art-director')).toBe(true); // a hyphen ends a word
+        expect(leaks('Art-director')).toBe(false); // a name joined into a hyphenated phrase that is not a path is kept (F76)
+        expect(leaks('art - director')).toBe(true);
         expect(leaks('Work in /WORK/acme folder')).toBe(true);
         expect(leaks('c:\\work\\acme')).toBe(true);
         expect(leaks('Home screen')).toBe(false);
+    });
+
+    /**
+     * Review round 2 (F74, F75, F78): a path hidden by URL encoding (single or double), an old Mac colon path, or a
+     * fullwidth / lookalike slash is still a path and is dropped whole; ordinary colons stay.
+     */
+    test('guarantee-2-no-originals-no-paths: encoded, colon-style and lookalike-slash paths are dropped whole and noted by field name', async () => {
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'boxuser' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/boxuser');
+        try {
+            const root = path.join(work, 'g2-encoded', 'Acme');
+            const hidden = [
+                '%2FUsers%2Fboxuser%2FDesktop%2Fsecret.psd',
+                '%252FUsers%252Fboxuser%252FDesktop%252Fsecret.psd',
+                'C%3A%5CProjects%5CClient%5Ca.psd',
+                'Macintosh HD:Projects:Secret Client:a.psd',
+                '／Volumes／Client Secret／a.psd',
+                '＼＼server＼Share＼a.psd',
+                'Projects∕Client∕a.psd',
+            ];
+            write(root, 'Home.png', makePng(8, 8, { xmp: xmpPacket({ title: 'Version A:B', description: 'file%3A%2F%2F%2Fhome%2Fboxuser%2Fa.psd', keywords: ['nav', ...hidden, 'Note: final'], label: 'Macintosh HD:Projects:a.psd' }) }));
+            write(root, 'Clean.png', makePng(8, 8, { shade: 30, xmp: xmpPacket({ title: 'Clean', keywords: ['nav'] }) }));
+            const out = path.join(work, 'g2-encoded-out');
+            const { manifest, results } = await buildBundle({ folderUuid: FOLDER, scan: scanFolder(root), outDir: out, appVersion: APP, folderLabel: 'Acme', convertOptions: { tools: [] } });
+            const home = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Home.png'));
+            expect(home['x-scry-sync']).toMatchObject({ title: 'Version A:B', keywords: ['nav', 'Note: final'] });
+            expect(home['x-scry-sync']).not.toHaveProperty('description');
+            expect(home['x-scry-sync']).not.toHaveProperty('label');
+            expect(home.tags).toEqual(['nav', 'Note: final']);
+            // F76: the person can see that something was dropped and which field, never the value.
+            expect(home['x-scry-sync'].notes).toEqual([{ code: 'metadata_dropped', fields: ['description', 'label', 'keywords'] }]);
+            expect(results.find((r) => r.rel === 'Home.png').notes).toEqual([{ code: 'metadata_dropped', fields: ['description', 'label', 'keywords'] }]);
+            const clean = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Clean.png'));
+            expect(clean['x-scry-sync']).not.toHaveProperty('notes');
+            expect(results.find((r) => r.rel === 'Clean.png')).not.toHaveProperty('notes');
+            const text = fs.readFileSync(path.join(out, 'scf.json'), 'utf8');
+            for (const needle of ['boxuser', '%2F', '%5C', '%3A', 'Macintosh', 'Secret', 'Volumes', 'server', '／', '＼', '∕']) expect({ needle, found: text.includes(needle) }).toEqual({ needle, found: false });
+        } finally {
+            osUser.mockRestore();
+            osHome.mockRestore();
+        }
+    }, 60_000);
+
+    test('guarantee-2-no-originals-no-paths: the leak check decodes before it looks, and keeps ordinary colons and joined names', () => {
+        const { makeLeakCheck } = require('../lib/converter/privacy.js');
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'boxuser' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/boxuser');
+        const leaks = makeLeakCheck({ root: '/work/Acme', names: ['annsmith'] });
+        osUser.mockRestore();
+        osHome.mockRestore();
+        const dropped = [
+            '%2FUsers%2Fboxuser%2FDesktop%2Fsecret.psd', // F74 probe
+            'file%3A%2F%2F%2Fhome%2Fboxuser%2Fa.psd', // F74 probe
+            '%2fprojects%2fa.psd', // lower-case escapes, no user name: still a path
+            'Projects%5CClient%5Ca.psd',
+            '%252FUsers%252Fann%252Fa.psd', // double-encoded
+            '%25252Fa%25252Fb', // triple-encoded
+            'by%20boxuser', // the name hidden by an escape
+            'by+boxuser', // form-encoded space
+            '%E2%88%95Volumes%E2%88%95a.psd', // an encoded lookalike slash
+            'file%3Aa.psd',
+            'bad %ZZ escape then %2Fetc%2Fpasswd', // a bad escape does not stop the decode
+            '%C3%28 broken utf8 %2Fa%2Fb',
+            'Macintosh HD:Projects:Secret Client:a.psd', // F75
+            'Macintosh HD:a.psd', // a volume prefix alone
+            'Server HD:Jobs',
+            'Projects:Client:a.psd', // 3+ segments, no space after the colons
+            '／Volumes／Client Secret／a.psd', // F78 fullwidth solidus
+            '＼＼server＼share', // fullwidth reverse solidus
+            'a﹨b', // small reverse solidus
+            'Projects∕Client', // division slash
+            'Projects⧸Client', // big solidus
+            'Ｃ：＼Ｕｓｅｒｓ', // fullwidth drive
+            'C:', // a bare drive
+            'C:Users', // a drive-relative path
+            'ｂｏｘｕｓｅｒ', // fullwidth user name
+            'boxuser',
+            'by boxuser',
+            '-home-boxuser-scry', // a flattened path that holds the name
+            'Users_boxuser_Desktop',
+            'boxuser-', // the name with nothing joined to it
+        ];
+        for (const value of dropped) expect({ value, dropped: leaks(value) }).toEqual({ value, dropped: true });
+        const kept = [
+            'Version A:B', // F76 probe
+            'Note: final',
+            'Home screen: v2 (final)',
+            'Ratio 16:9',
+            'Exported 10:30:15',
+            '100% done',
+            '50%2 off', // not an escape
+            'boxuser-brand', // F76: the name joined into a longer phrase that is not a path
+            'brand_boxuser_kit',
+            'xboxuser', // F78: glued names are the accepted trade-off of the whole-word rule
+            'joannsmithers',
+            'boxuser2024',
+            '1⁄2 size', // the fraction slash is left alone: it is how fractions are written
+        ];
+        for (const value of kept) expect({ value, dropped: leaks(value) }).toEqual({ value, dropped: false });
     });
 
     test('a Windows-style and a Mac-style relative path of the same file give the same capture id', () => {

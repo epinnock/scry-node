@@ -121,8 +121,23 @@ describe('convertFile re-checks the file at read time (F60)', () => {
         fs.symlinkSync(outside, file.abs);
         const swapped = await convertFile(file.abs, { root: scan.root, tools: [] });
         expect(swapped).toMatchObject({ verdict: 'failed', codes: ['not_followed'], pictures: [] });
-        // Without a root a link is refused too.
-        expect((await convertFile(file.abs, { tools: [] })).codes).toEqual(['not_followed']);
+    });
+
+    test('convertFile needs the folder root: without it there is no read-time confinement, so it refuses to run (F77)', async () => {
+        const root = path.join(work, 'toctou-noroot');
+        write(root, 'Swap/ok.png', makePng(8, 8));
+        write(path.join(work, 'toctou-noroot-out'), 'ok.png', makePng(9, 9, { shade: 7 }));
+        const scan = scanFolder(root);
+        fs.rmSync(path.join(root, 'Swap'), { recursive: true });
+        fs.symlinkSync(path.join(work, 'toctou-noroot-out'), path.join(root, 'Swap'));
+        // The review's probe: the swapped subfolder now points outside, and no root is passed.
+        await expect(convertFile(scan.files[0].abs, {})).rejects.toThrow(/root/);
+        await expect(convertFile(scan.files[0].abs)).rejects.toThrow(/root/);
+        await expect(convertFile(scan.files[0].abs, { root: '' })).rejects.toThrow(/root/);
+        // The message names the option, never the file.
+        await expect(convertFile(scan.files[0].abs, {})).rejects.toThrow(expect.objectContaining({ message: expect.not.stringContaining(work) }));
+        // With the root it is refused as outside the folder.
+        expect(await convertFile(scan.files[0].abs, { root: scan.root, tools: [] })).toMatchObject({ verdict: 'failed', codes: ['outside_folder'], pictures: [] });
     });
 
     test('a scanned subfolder swapped for a link to a folder outside the root is refused', async () => {

@@ -23,7 +23,7 @@ function expectScryPicture(p) {
 }
 
 async function convert(name, bytes, opts = {}) {
-    return convertFile(write(dir, name, bytes), { tools: [], ...opts });
+    return convertFile(write(dir, name, bytes), { root: dir, tools: [], ...opts });
 }
 
 describe('PSD / PSB: the saved flattened picture only', () => {
