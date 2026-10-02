@@ -365,6 +365,105 @@ describe('guarantee-2-no-originals-no-paths', () => {
         for (const value of kept) expect({ value, dropped: leaks(value) }).toEqual({ value, dropped: false });
     });
 
+    /**
+     * Review round 3 (F108-F111): the decode fails closed past its bound, `%uXXXX` and HTML entities are decoded, an
+     * escape is a word break, more slash lookalikes, more folder words, spaced colon paths, and a linear check.
+     */
+    const encodeTimes = (text, times) => {
+        let out = text;
+        for (let i = 0; i < times; i += 1) out = out.replace(/%/g, '%25');
+        return out;
+    };
+    const fiveFold = encodeTimes('%2Fhome%2Fboxuser%2Fa', 4); // %252525252Fhome... (the review's probe)
+    const sixFold = encodeTimes('%2Fhome%2Fboxuser%2Fa', 5);
+    const round3Dropped = [
+        fiveFold,
+        sixFold,
+        encodeTimes('%2Fa%2Fb', 7), // no name, still a path, past the bound
+        '%u002Fhome%u002Fboxuser',
+        '%u002fVolumes%u002fClient', // %u escape, no name
+        'x%2Fboxuser', // the name glued to the hex letters of an escape
+        'x%u00A0boxuser',
+        '&#47;Volumes&#47;Client&#47;a.psd',
+        '&amp;#47;Volumes&amp;#47;Client&amp;#47;a.psd',
+        '&amp;amp;#47;Volumes&amp;amp;#47;Client&amp;amp;#47;a.psd',
+        '&#x2F;Volumes&#x2f;a.psd',
+        'Volumes&sol;Client&sol;a.psd',
+        'C&colon;&bsol;Projects',
+        'Volumes∖Client∖a',
+        'Volumes⧵Client',
+        'Volumes╱Client',
+        'Volumes⟋Client',
+        'srv-boxuser-scry', // F111 folder words
+        'opt_boxuser',
+        'var-boxuser',
+        'tmp-boxuser',
+        'private_boxuser_x',
+        'root-boxuser',
+        'Macintosh HD: Projects: a.psd', // F111 spaced colon path
+        'Data HD: Jobs: a.psd',
+        'Client:a.psd', // one colon before a file name with an extension
+        'a'.repeat(5000), // over-long text is dropped whole, never scanned
+    ];
+    const round3Kept = ['Version A:B', 'Note: final', 'Ratio 16:9', 'Exported 10:30:15', 'boxuser-brand', 'Art-director', 'TODO: fix: now', 'Mockup 3:4:5', 'Tom &amp; Jerry', 'R&D notes', '100% done', 'Ratio: 4:3', 'Time: 10:30', 'Step 1: crop', 'Option: A: B'];
+
+    test('guarantee-2-no-originals-no-paths: round 3 probes are dropped (fail closed past the decode bound) and ordinary text stays', () => {
+        const { makeLeakCheck } = require('../lib/converter/privacy.js');
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'boxuser' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/boxuser');
+        const leaks = makeLeakCheck({ root: '/work/Acme' });
+        osUser.mockRestore();
+        osHome.mockRestore();
+        for (const value of round3Dropped) expect({ value: value.slice(0, 80), dropped: leaks(value) }).toEqual({ value: value.slice(0, 80), dropped: true });
+        for (const value of round3Kept) expect({ value, dropped: leaks(value) }).toEqual({ value, dropped: false });
+    });
+
+    test('guarantee-2-no-originals-no-paths: round 3 probes in a real bundle leave no name and no path, noted by field name', async () => {
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'boxuser' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/boxuser');
+        try {
+            const root = path.join(work, 'g2-round3', 'Acme');
+            write(root, 'Five.png', makePng(8, 8, { xmp: xmpPacket({ title: fiveFold, description: sixFold, keywords: ['nav', fiveFold, '%u002Fhome%u002Fboxuser', '&amp;#47;Volumes&amp;#47;Client&amp;#47;a.psd', 'Volumes∖Client∖a'] }) }));
+            const out = path.join(work, 'g2-round3-out');
+            const longLabel = `Acme ${'brand-'.repeat(10_000)}`;
+            const { manifest, results } = await buildBundle({ folderUuid: FOLDER, scan: scanFolder(root), outDir: out, appVersion: APP, folderLabel: longLabel, convertOptions: { tools: [] } });
+            const five = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Five.png'));
+            expect(five['x-scry-sync'].keywords).toEqual(['nav']);
+            expect(five.tags).toEqual(['nav']);
+            expect(five['x-scry-sync']).not.toHaveProperty('description');
+            expect(five['x-scry-sync'].notes).toEqual([{ code: 'metadata_dropped', fields: ['title', 'description', 'keywords'] }]);
+            expect(results.find((r) => r.rel === 'Five.png').notes).toEqual([{ code: 'metadata_dropped', fields: ['title', 'description', 'keywords'] }]);
+            // The long label is cut to 200 BEFORE the check, then kept (it holds no location).
+            expect(five.title[0]).toBe(longLabel.slice(0, 200));
+            const text = fs.readFileSync(path.join(out, 'scf.json'), 'utf8');
+            for (const needle of ['boxuser', '%25', '%u', '&#47;', '&amp;', 'Volumes', '∖']) expect({ needle, found: text.includes(needle) }).toEqual({ needle, found: false });
+        } finally {
+            osUser.mockRestore();
+            osHome.mockRestore();
+        }
+    }, 60_000);
+
+    test('guarantee-2-no-originals-no-paths: the leak check takes linear time (4x the text costs well under 16x)', () => {
+        const { makeLeakCheck } = require('../lib/converter/privacy.js');
+        const leaks = makeLeakCheck({ root: '/work/Acme', names: ['annsmith'] });
+        const cost = (text) => {
+            let best = Infinity;
+            for (let trial = 0; trial < 5; trial += 1) {
+                const start = process.hrtime.bigint();
+                for (let i = 0; i < 10; i += 1) leaks(text);
+                best = Math.min(best, Number(process.hrtime.bigint() - start));
+            }
+            return best;
+        };
+        for (const unit of ['a', 'a-', 'a_b-']) {
+            const small = unit.repeat(Math.floor(1000 / unit.length));
+            const large = unit.repeat(Math.floor(4000 / unit.length));
+            cost(small); // warm up
+            const ratio = cost(large) / cost(small);
+            expect({ unit, linear: ratio < 9 }).toEqual({ unit, linear: true });
+        }
+    });
+
     test('a Windows-style and a Mac-style relative path of the same file give the same capture id', () => {
         expect(pictureId(FOLDER, 'Design\\Card.psd')).toBe(pictureId(FOLDER, 'Design/Card.psd'));
     });
