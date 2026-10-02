@@ -670,3 +670,159 @@ describe('guarantee-2-no-originals-no-paths: round 4 (composition)', () => {
         }
     }, 60_000);
 });
+
+describe('guarantee-2-no-originals-no-paths: file names (F157)', () => {
+    const OS_USER = 'boxuser';
+    const ROOT = '/home/boxuser/scry/Acme';
+    /** The two names the scry-sync #4 review sent through the real converter (macOS shows `/` as `:`; U+2215 is the division slash). */
+    const REPORTED = [`Users:${OS_USER}:Desktop`, `\u2215home\u2215${OS_USER}\u2215leak`];
+    /** Ordinary names: spaces, accents, dots, digits, a colon or an ampersand that is not a location. */
+    const ORDINARY = [
+        'Home Page 2', 'Caf\u00E9 Men\u00FC', 'Logo.final', 'v1.2 final', 'Checkout - step 3', '\u65E5\u672C\u8A9E \u30C7\u30B6\u30A4\u30F3', 'Tom &amp; Jerry', 'R&D notes', '50% off',
+        'Version A:B', 'Note: final', 'Q3: Plan: v2', '10:30 AM', 'Step:final.v2', 'boxuser-brand', 'Art-director', 'Data review', '1\u20442 size',
+    ];
+
+    const withOsUser = async (run) => {
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: OS_USER });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue(`/home/${OS_USER}`);
+        try {
+            return await run();
+        } finally {
+            osUser.mockRestore();
+            osHome.mockRestore();
+        }
+    };
+
+    const stubConvert = (png) => async () => ({ format: 'png', verdict: 'faithful', codes: [], reasons: [], fix: null, pictures: [{ suffix: '', bytes: png, family: 'png', width: 4, height: 4 }], xmp: {} });
+    const stubScan = (rels) => ({ root: ROOT, files: rels.map((rel) => ({ abs: `${ROOT}/${rel}`, rel })), refused: [] });
+
+    test('the two reported names, written as real files and read by the real converter, never reach scf.json', async () => {
+        await withOsUser(async () => {
+            const root = path.join(work, 'f157-real', 'Acme');
+            REPORTED.forEach((name, i) => write(root, `${name}.png`, makePng(8, 8, { shade: 20 + i * 40 })));
+            write(root, 'Home Page 2.png', makePng(8, 8, { shade: 200 }));
+            const out = path.join(work, 'f157-real-out');
+            const { manifest, results } = await buildBundle({ folderUuid: FOLDER, scan: scanFolder(root), outDir: out, appVersion: APP, folderLabel: 'Acme', convertOptions: { tools: [] } });
+            expect(manifest.captures).toHaveLength(3);
+            const text = fs.readFileSync(path.join(out, 'scf.json'), 'utf8');
+            for (const needle of [OS_USER, 'Desktop', 'leak', 'Users:', '\u2215', '/home']) expect({ needle, found: text.includes(needle) }).toEqual({ needle, found: false });
+            for (const name of REPORTED) {
+                const capture = manifest.captures.find((c) => c.id === pictureId(FOLDER, `${name}.png`));
+                // The file still syncs, under a safe placeholder title that is never a path.
+                expect(capture.title).toEqual(['Acme', expect.stringMatching(/^Untitled [0-9a-f]{6}$/)]);
+                expect(capture['x-scry-sync'].notes).toEqual([{ code: 'metadata_dropped', fields: ['fileName'] }]);
+                expect(results.find((r) => r.rel === `${name}.png`).notes).toEqual([{ code: 'metadata_dropped', fields: ['fileName'] }]);
+            }
+            const home = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Home Page 2.png'));
+            expect(home.title).toEqual(['Acme', 'Home Page 2']);
+            expect('notes' in home['x-scry-sync']).toBe(false);
+        });
+    }, 60_000);
+
+    test('a file name that holds a location only in part loses that part, never the whole file; a path-shaped one gets a placeholder', async () => {
+        await withOsUser(async () => {
+            const png = makePng(4, 4);
+            const out = path.join(work, 'f157-part');
+            const rels = [`Hero ${REPORTED[0]} v2.png`, `Macintosh HD: Projects: a.png`, `by ${OS_USER} final.png`, `${OS_USER}.png`];
+            const { manifest } = await buildBundle({ folderUuid: FOLDER, scan: stubScan(rels), outDir: out, appVersion: APP, convert: stubConvert(png) });
+            const titles = rels.map((rel) => manifest.captures.find((c) => c.id === pictureId(FOLDER, rel)).title);
+            expect(titles[0]).toEqual(['Hero v2']);
+            expect(titles[1]).toEqual([expect.stringMatching(/^Untitled [0-9a-f]{6}$/)]);
+            expect(titles[2]).toEqual(['by final']);
+            expect(titles[3]).toEqual([expect.stringMatching(/^Untitled [0-9a-f]{6}$/)]);
+            const text = fs.readFileSync(path.join(out, 'scf.json'), 'utf8');
+            expect(text).not.toContain(OS_USER);
+        });
+    });
+
+    test('ordinary names (spaces, accents, dots, digits) are unchanged and carry no note', async () => {
+        await withOsUser(async () => {
+            const png = makePng(4, 4);
+            const out = path.join(work, 'f157-ordinary');
+            const rels = ORDINARY.map((name) => `${name}.png`);
+            const { manifest, results } = await buildBundle({ folderUuid: FOLDER, scan: stubScan(rels), outDir: out, appVersion: APP, folderLabel: 'Acme', convert: stubConvert(png) });
+            expect(manifest.captures).toHaveLength(ORDINARY.length);
+            for (const name of ORDINARY) {
+                const capture = manifest.captures.find((c) => c.id === pictureId(FOLDER, `${name}.png`));
+                expect({ name, title: capture.title }).toEqual({ name, title: ['Acme', name] });
+                expect('notes' in capture['x-scry-sync']).toBe(false);
+            }
+            expect(results.every((r) => !('notes' in r))).toBe(true);
+        });
+    });
+
+    test('a file with a long, unusual name still syncs', async () => {
+        await withOsUser(async () => {
+            const png = makePng(4, 4);
+            const out = path.join(work, 'f157-long');
+            const rels = [`${'Very long unusual name \u00E9 \u2014 '.repeat(7)}end.png`, `Users:${OS_USER}:${'x'.repeat(200)}.png`];
+            const { manifest, results } = await buildBundle({ folderUuid: FOLDER, scan: stubScan(rels), outDir: out, appVersion: APP, convert: stubConvert(png) });
+            expect(manifest.captures).toHaveLength(2);
+            expect(results.map((r) => r.verdict)).toEqual(['faithful', 'faithful']);
+            expect(manifest.captures[0].title[0]).toBe(rels[0].slice(0, -4));
+            expect(manifest.captures[1].title[0]).toMatch(/^Untitled [0-9a-f]{6}$/);
+        });
+    });
+
+    test('a multi-page file gets the same safe title on every page', async () => {
+        await withOsUser(async () => {
+            const png = makePng(4, 4);
+            const convert = async () => ({
+                format: 'pdf', verdict: 'faithful', codes: [], reasons: [], fix: null, xmp: {},
+                pictures: [1, 2].map((n) => ({ suffix: `#p${n}`, bytes: png, family: 'png', width: 4, height: 4 })),
+            });
+            const out = path.join(work, 'f157-pages');
+            const rel = `Users:${OS_USER}:Desktop.pdf`;
+            const { manifest } = await buildBundle({ folderUuid: FOLDER, scan: stubScan([rel]), outDir: out, appVersion: APP, convert });
+            expect(manifest.captures.map((c) => c.name)).toEqual(['Page 1', 'Page 2']);
+            expect(new Set(manifest.captures.map((c) => JSON.stringify(c.title))).size).toBe(1);
+            expect(manifest.captures[0].title[0]).toMatch(/^Untitled [0-9a-f]{6}$/);
+        });
+    });
+
+    test('the composed-encoding fuzz (seed 20261003), written as file names, never reaches a real bundle; the reported names too', async () => {
+        await withOsUser(async () => {
+            // Reuse the round 4 generator through a fresh copy of its layers: any text a file name can hold (no literal `/`, `\`).
+            const r = (() => { let a = 20261003 >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();
+            const hex2 = (b) => b.toString(16).padStart(2, '0');
+            const mustEscape = (ch) => '%&#;'.includes(ch);
+            const zeros = () => '0'.repeat(Math.floor(r() * 12));
+            const lookalike = (ch) => {
+                if (ch === '\\') return '\u2216';
+                return ch === ':' && r() < 0.5 ? '\uA789' : ch;
+            };
+            const layers = [
+                (s) => [...s].map((ch) => (mustEscape(ch) || ch === '/' || ch === '\\' || r() < 0.5 ? [...Buffer.from(ch, 'utf8')].map((b) => `%${hex2(b)}`).join('') : ch)).join(''),
+                (s) => [...s].map((ch) => (mustEscape(ch) || ch === '/' || ch === '\\' || r() < 0.5 ? `&#x${zeros()}${ch.codePointAt(0).toString(16)};` : ch)).join(''),
+                (s) => [...s].map((ch) => (ch === '/' ? '\u2215' : lookalike(ch))).join(''),
+                (s) => [...s].map((ch) => (ch >= '!' && ch <= '~' && ch !== '/' && ch !== '\\' && r() < 0.4 ? String.fromCodePoint(ch.codePointAt(0) + 0xfee0) : ch)).join(''),
+                (s) => [...s].map((ch) => (r() < 0.5 ? ch.toUpperCase() : ch.toLowerCase())).join(''),
+                (s) => s.replace(/\//g, ':'),
+            ];
+            const payloads = ['/home/boxuser/secret', 'C:\\Users\\boxuser\\a.psd', '/Volumes/Client/a.psd', 'Users:boxuser:Desktop', 'Macintosh HD:Projects:Client'];
+            const names = [...REPORTED];
+            while (names.length < REPORTED.length + 300) {
+                let text = payloads[Math.floor(r() * payloads.length)];
+                const depth = 1 + Math.floor(r() * 6);
+                for (let i = 0; i < depth; i += 1) text = layers[Math.floor(r() * layers.length)](text);
+                if (text.length > 200 || /[\\/]/.test(text)) continue;
+                names.push(text);
+            }
+            const png = makePng(4, 4);
+            const failures = [];
+            for (const [index, name] of names.entries()) {
+                const out = path.join(work, 'f157-fuzz', String(index));
+                const rel = `${name}.png`;
+                const { manifest } = await buildBundle({ folderUuid: FOLDER, scan: stubScan([rel]), outDir: out, appVersion: APP, folderLabel: 'Acme', convert: stubConvert(png) });
+                const text = fs.readFileSync(path.join(out, 'scf.json'), 'utf8');
+                const leaks = require('../lib/converter/privacy.js').makeLeakCheck({ root: ROOT });
+                const title = manifest.captures[0].title;
+                // Either the name is clean (and then kept as typed) or it is gone; a name the check drops is never in the bundle.
+                const ok = manifest.captures.length === 1 && !title.some((part) => leaks(part)) && !/boxuser|secret|volumes/i.test(text) && (leaks(name) ? title[1] !== name : title[1] === name);
+                if (!ok) failures.push(name.slice(0, 120));
+                fs.rmSync(out, { recursive: true, force: true });
+            }
+            expect(failures).toEqual([]);
+        });
+    }, 120_000);
+});
