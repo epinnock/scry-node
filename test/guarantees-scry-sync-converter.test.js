@@ -455,7 +455,7 @@ describe('guarantee-2-no-originals-no-paths', () => {
             }
             return best;
         };
-        for (const unit of ['a', 'a-', 'a_b-']) {
+        for (const unit of ['a', 'a-', 'a_b-', '%25', '％2F', '&#x0002F;', '&amp;']) {
             const small = unit.repeat(Math.floor(1000 / unit.length));
             const large = unit.repeat(Math.floor(4000 / unit.length));
             cost(small); // warm up
@@ -481,4 +481,192 @@ describe('bundle size', () => {
         await expect(buildBundle({ folderUuid: FOLDER, scan, outDir: out, appVersion: APP, maxBundleBytes: 120 })).rejects.toThrow('This folder is too big; link a smaller folder');
         expect(fs.existsSync(path.join(out, 'scf.json'))).toBe(false);
     });
+});
+
+/**
+ * Review round 4 (F120-F122): ONE normalising step (strip invisibles, NFKC, case fold, lookalike mapping, decode every
+ * escape) iterated to a fixpoint, every intermediate form checked, fail closed past the bound. The fuzz composes 1-8
+ * random encodings around a leaking string and checks the real bundle.
+ */
+describe('guarantee-2-no-originals-no-paths: round 4 (composition)', () => {
+    const PAYLOADS = ['/home/boxuser/secret', 'C:\\Users\\boxuser\\a.psd', '/Volumes/Client/a.psd'];
+    const ROUND4_PROBES = [
+        '%EF%BC%85252Fhome%EF%BC%85252Fboxuser%EF%BC%85252Fsecret', // F120: fullwidth percent appears after one decode
+        '&#xFF05;252Fhome&#xFF05;252Fboxuser',
+        '%EF%BC%85252FVolumes%EF%BC%85252FClient',
+        '&#x00000002F;Volumes&#x00000002F;Client', // F121: zero padding past 7 digits
+        '&#000000047;Volumes&#000000047;Client',
+        `&#${'0'.repeat(40)}47;Volumes`,
+        '&setminus;Volumes&setminus;Client', // F121: named slash lookalikes
+        '&Backslash;Volumes&Backslash;Client',
+        '&smallsetminus;Volumes',
+        '&dsol;Volumes',
+        'box\u034Fuser', // F122: combining grapheme joiner inside the name
+        'box\u200Buser',
+        'by box\u2060user',
+        'Volumes\uA789Client\uA789a.psd', // a colon lookalike that sync tools put in file names
+    ];
+    const ROUND4_KEPT = [
+        'Version A:B', 'Note: final', '16:9', '10:30:15', 'boxuser-brand', 'Art-director', 'root cause', 'Data review',
+        'Project: Alpha', 'Q3: Plan: v2', 'A:B testing', 'X:Y ratio', 'Step:final.v2', 'Tom &amp; Jerry', 'R&D notes',
+        '50% off', 'Re: logo.png', 'Contact: a@b.com', '10:30 AM', 'İstanbul', '1⁄2 size',
+    ];
+    const ROUND4_STILL_DROPPED = ['Macintosh HD: Projects: a.psd', 'srv-boxuser-scry', 'C:Users', 'C:', 'Client:a.psd', 'Client:a.v2.psd'];
+
+    /** mulberry32: a small seeded PRNG, so the fuzz is the same on every run. */
+    function rng(seed) {
+        let a = seed >>> 0;
+        return () => {
+            a = (a + 0x6d2b79f5) >>> 0;
+            let t = a;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    const hex2 = (b) => b.toString(16).padStart(2, '0');
+    const zeros = (r) => '0'.repeat(Math.floor(r() * 12));
+    /** A decimal or hex (`x` or `X`) numeric entity with random zero padding. */
+    function numericEntityOf(ch, r) {
+        if (r() < 0.5) return `&#${zeros(r)}${ch.codePointAt(0)};`;
+        const x = r() < 0.5 ? 'x' : 'X';
+        return `&#${x}${zeros(r)}${ch.codePointAt(0).toString(16)};`;
+    }
+    const mustEscape = (ch) => '%&#;'.includes(ch);
+    /** Each layer turns text into text that decodes (or folds) back to it. */
+    const LAYERS = {
+        percent: (s, r) => [...s].map((ch) => (mustEscape(ch) || r() < 0.5 ? [...Buffer.from(ch, 'utf8')].map((b) => `%${hex2(b)}`).join('') : ch)).join(''),
+        percentU: (s, r) => [...s].map((ch) => (mustEscape(ch) || r() < 0.5 ? [...ch].map((c) => c.split('').map((u) => `%u${u.charCodeAt(0).toString(16).padStart(4, '0')}`).join('')).join('') : ch)).join(''),
+        fullwidthPercent: (s, r) => [...s].map((ch) => (mustEscape(ch) || r() < 0.5 ? [...Buffer.from(ch, 'utf8')].map((b) => `\uFF05${hex2(b)}`).join('') : ch)).join(''),
+        entity: (s, r) => [...s].map((ch) => (mustEscape(ch) || r() < 0.5 ? numericEntityOf(ch, r) : ch)).join(''),
+        named: (s, r) => {
+            const names = { '/': ['sol'], '\\': ['bsol', 'setminus', 'Backslash', 'smallsetminus'], ':': ['colon'], '.': ['period'], '%': ['percnt'], '&': ['amp'], '#': ['num'], ';': ['semi'], _: ['lowbar'] };
+            return [...s].map((ch) => (names[ch] && (mustEscape(ch) || r() < 0.7) ? `&${names[ch][Math.floor(r() * names[ch].length)]};` : ch)).join('');
+        },
+        caseChange: (s, r) => [...s].map((ch) => (r() < 0.5 ? ch.toUpperCase() : ch.toLowerCase())).join(''),
+        fullwidthLetters: (s, r) => [...s].map((ch) => (ch >= '!' && ch <= '~' && r() < 0.4 ? String.fromCodePoint(ch.codePointAt(0) + 0xfee0) : ch)).join(''),
+    };
+    const LAYER_NAMES = Object.keys(LAYERS);
+
+    /** One fuzz case: a payload wrapped in 1-8 layers (a "double" draw applies one layer twice), kept under maxLength. */
+    function fuzzCase(r, maxLength) {
+        let text = PAYLOADS[Math.floor(r() * PAYLOADS.length)];
+        const wanted = 1 + Math.floor(r() * 8);
+        const applied = [];
+        for (let i = 0; i < wanted * 3 && applied.length < wanted; i += 1) {
+            const name = LAYER_NAMES[Math.floor(r() * LAYER_NAMES.length)];
+            const times = r() < 0.2 ? 2 : 1; // double escaping
+            let next = text;
+            for (let t = 0; t < times; t += 1) next = LAYERS[name](next, r);
+            if (next.length > maxLength || next === text) continue;
+            text = next;
+            applied.push(times === 2 ? `${name}x2` : name);
+        }
+        return { text, applied };
+    }
+
+    const FUZZ_SEED = 20261002;
+    const FUZZ_UNIT_COUNT = 3000;
+    const FUZZ_BUNDLE_COUNT = 300;
+
+    function boxuserLeakCheck() {
+        const { makeLeakCheck } = require('../lib/converter/privacy.js');
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'boxuser' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/boxuser');
+        try {
+            return makeLeakCheck({ root: '/home/boxuser/scry/Acme' });
+        } finally {
+            osUser.mockRestore();
+            osHome.mockRestore();
+        }
+    }
+
+    test('guarantee-2-no-originals-no-paths: round 4 probes are dropped, ordinary text stays', () => {
+        const leaks = boxuserLeakCheck();
+        for (const value of [...ROUND4_PROBES, ...ROUND4_STILL_DROPPED]) expect({ value, dropped: leaks(value) }).toEqual({ value, dropped: true });
+        for (const value of ROUND4_KEPT) expect({ value, dropped: leaks(value) }).toEqual({ value, dropped: false });
+    });
+
+    test(`guarantee-2-no-originals-no-paths: ${FUZZ_UNIT_COUNT} random compositions of 1-8 encodings (seed ${FUZZ_SEED}) are all dropped`, () => {
+        const leaks = boxuserLeakCheck();
+        const r = rng(FUZZ_SEED);
+        const kept = [];
+        const depths = new Set();
+        for (let i = 0; i < FUZZ_UNIT_COUNT; i += 1) {
+            const { text, applied } = fuzzCase(r, 1000);
+            depths.add(applied.length);
+            if (!leaks(text)) kept.push({ text: text.slice(0, 120), applied });
+        }
+        expect(kept).toEqual([]);
+        expect([...depths].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    });
+
+    test(`guarantee-2-no-originals-no-paths: ${FUZZ_BUNDLE_COUNT} fuzz values and the round 4 probes never reach a real bundle (title, keywords, tags, folder label)`, async () => {
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'boxuser' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/boxuser');
+        try {
+            const r = rng(FUZZ_SEED + 1);
+            const values = [...ROUND4_PROBES];
+            // The folder label is cut to 200 characters before the check, so bundle values stay under 200.
+            while (values.length < ROUND4_PROBES.length + FUZZ_BUNDLE_COUNT) values.push(fuzzCase(r, 200).text);
+            const png = makePng(4, 4);
+            const failures = [];
+            for (const [index, value] of values.entries()) {
+                const out = path.join(work, 'g2-round4-fuzz', String(index));
+                const convert = async () => ({ format: 'png', verdict: 'faithful', codes: [], reasons: [], fix: null, pictures: [{ suffix: '', bytes: png, family: 'png', width: 4, height: 4 }], xmp: { title: value, description: value, keywords: ['nav', value] } });
+                const scan = { root: '/home/boxuser/scry/Acme', files: [{ abs: '/home/boxuser/scry/Acme/Home.png', rel: 'Home.png' }], refused: [] };
+                const { manifest } = await buildBundle({ folderUuid: FOLDER, scan, outDir: out, appVersion: APP, folderLabel: value, convert });
+                const capture = manifest.captures[0];
+                const text = fs.readFileSync(path.join(out, 'scf.json'), 'utf8');
+                const ok =
+                    JSON.stringify(capture.title) === JSON.stringify(['Home']) &&
+                    !('title' in capture['x-scry-sync']) &&
+                    !('description' in capture['x-scry-sync']) &&
+                    JSON.stringify(capture['x-scry-sync'].keywords) === JSON.stringify(['nav']) &&
+                    JSON.stringify(capture.tags) === JSON.stringify(['nav']) &&
+                    JSON.stringify(capture['x-scry-sync'].notes) === JSON.stringify([{ code: 'metadata_dropped', fields: ['title', 'description', 'keywords', 'folderLabel'] }]) &&
+                    !text.includes(value) &&
+                    !/boxuser|secret|volumes/i.test(text);
+                if (!ok) failures.push(value.slice(0, 120));
+                fs.rmSync(out, { recursive: true, force: true });
+            }
+            expect(failures).toEqual([]);
+        } finally {
+            osUser.mockRestore();
+            osHome.mockRestore();
+        }
+    }, 120_000);
+
+    test('guarantee-2-no-originals-no-paths: the reviewer probes in real XMP are dropped; a cut description is noted by field name', async () => {
+        const osUser = jest.spyOn(os, 'userInfo').mockReturnValue({ username: 'boxuser' });
+        const osHome = jest.spyOn(os, 'homedir').mockReturnValue('/home/boxuser');
+        try {
+            const root = path.join(work, 'g2-round4', 'Acme');
+            const xml = (s) => s.replace(/&/g, '&amp;');
+            const probe = '%EF%BC%85252Fhome%EF%BC%85252Fboxuser%EF%BC%85252Fsecret';
+            write(root, 'Probe.png', makePng(8, 8, { xmp: xmpPacket({ title: probe, description: xml('&#x00000002F;Volumes&#x00000002F;Client'), keywords: ['nav', probe, xml('&setminus;Volumes&setminus;Client'), xml('&#000000047;Volumes'), 'A:B testing', 'Step:final.v2'] }) }));
+            write(root, 'Long.png', makePng(8, 8, { shade: 30, xmp: xmpPacket({ title: 'Long', description: 'word '.repeat(1092) }) }));
+            const out = path.join(work, 'g2-round4-out');
+            const { manifest, results } = await buildBundle({ folderUuid: FOLDER, scan: scanFolder(root), outDir: out, appVersion: APP, folderLabel: probe, convertOptions: { tools: [] } });
+            const probeCapture = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Probe.png'));
+            expect(probeCapture.title).toEqual(['Probe']);
+            expect(probeCapture['x-scry-sync'].keywords).toEqual(['nav', 'A:B testing', 'Step:final.v2']);
+            expect(probeCapture.tags).toEqual(['nav', 'A:B testing', 'Step:final.v2']);
+            expect(probeCapture['x-scry-sync'].notes).toEqual([{ code: 'metadata_dropped', fields: ['title', 'description', 'keywords', 'folderLabel'] }]);
+            // F122: the 5460-character description is cut to 2000 by the XMP reader; the note names the field, never the value.
+            const long = manifest.captures.find((c) => c.id === pictureId(FOLDER, 'Long.png'));
+            expect(Array.from(long['x-scry-sync'].description)).toHaveLength(2000);
+            expect(long['x-scry-sync'].notes).toEqual([
+                { code: 'metadata_dropped', fields: ['folderLabel'] },
+                { code: 'metadata_truncated', fields: ['description'] },
+            ]);
+            expect(results.find((x) => x.rel === 'Long.png').notes).toEqual(long['x-scry-sync'].notes);
+            const text = fs.readFileSync(path.join(out, 'scf.json'), 'utf8');
+            for (const needle of ['boxuser', 'secret', 'Volumes', '%EF', '&#', 'setminus']) expect({ needle, found: text.includes(needle) }).toEqual({ needle, found: false });
+        } finally {
+            osUser.mockRestore();
+            osHome.mockRestore();
+        }
+    }, 60_000);
 });
