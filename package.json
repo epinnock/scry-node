@@ -44,7 +44,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.9"
   },
   "dependencies": {
     "@hyzyla/pdfium": "2.1.13",
@@ -59,7 +59,7 @@
     "form-data": "^4.0.0",
     "inquirer": "^8.2.6",
     "open": "^8.4.2",
-    "sharp": "0.34.5",
+    "sharp": "0.35.5",
     "storycap": "^4.2.0",
     "ws": "^8.19.0",
     "yargs": "^17.7.2"
