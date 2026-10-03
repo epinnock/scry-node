@@ -97,6 +97,8 @@ This deploys your Storybook immediately without setting up GitHub Actions.
 
 **You don't need to install anything!** Just use `npx` to run the init command:
 
+Requires Node.js 20.9 or newer (Node 18 is end of life; use `@scrymore/scry-deployer@0.11` if you are stuck on it).
+
 ```bash
 # From npm (recommended)
 npx @scrymore/scry-deployer init --projectId xxx --apiKey yyy
@@ -787,7 +789,7 @@ See the complete workflow configuration: [`.github/workflows/deploy-pr-preview.y
 Key workflow features:
 - **Triggers**: `pull_request` with types `[opened, synchronize, reopened]`
 - **Permissions**: `contents: read`, `pull-requests: write`
-- **Node version**: 18 (configurable in workflow)
+- **Node version**: 20 (configurable in workflow)
 - **Comment management**: Smart update/create logic to avoid duplicate comments
 
 #### Cleanup

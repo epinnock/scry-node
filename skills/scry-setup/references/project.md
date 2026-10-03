@@ -2,7 +2,7 @@
 
 Use for an existing application's Scry deployment or CI integration. Preserve
 its package manager, framework, build command, Node version, and workspace
-layout. Deployer 0.6.0 requires Node >=18; use the application's supported Node
+layout. Deployer 0.12.0 and later require Node >=20.9 (0.11.x and earlier: Node >=18); use the application's supported Node
 version rather than downgrading it to the minimum.
 
 ## Prepare locally
