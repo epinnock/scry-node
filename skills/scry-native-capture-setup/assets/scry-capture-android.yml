@@ -1,0 +1,46 @@
+# Capture the app's screens on an emulator and upload them to Scry, on every push to the default branch.
+# Never on a pull request: the upload needs SCRY_API_KEY, and a pull request must not get a secret.
+# Setup: repository variable SCRY_PROJECT_ID (proj_xxxxxxxx) and repository secret SCRY_API_KEY (sk_live_xxxxxxxx).
+name: scry-capture
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build the debug app
+        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Capture on an emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/capture.sh
+      - name: Upload to Scry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npx @scrymore/scry-deployer@0.11.1 upload .scry/capture
+        env:
+          SCRY_PROJECT_ID: ${{ vars.SCRY_PROJECT_ID }}
+          SCRY_API_KEY: ${{ secrets.SCRY_API_KEY }}

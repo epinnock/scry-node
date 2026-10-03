@@ -1,0 +1,33 @@
+# Capture Kettle's screens and upload them to your Scry project.
+# Runs ONLY on a push to the default branch (never on pull requests, so a fork cannot read the secret).
+# Set the repository variable SCRY_PROJECT_ID and the repository secret SCRY_API_KEY first.
+name: scry-capture
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture:
+    # Only the default branch; workflow_dispatch from another branch is skipped too.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Select Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - name: Capture
+        run: ./scripts/capture.sh
+      - name: Check the bundle
+        run: npx @scrymore/scry-deployer@0.11.1 upload .scry/capture --dry-run
+      - name: Upload to Scry
+        run: npx @scrymore/scry-deployer@0.11.1 upload .scry/capture
+        env:
+          SCRY_PROJECT_ID: ${{ vars.SCRY_PROJECT_ID }}
+          SCRY_API_KEY: ${{ secrets.SCRY_API_KEY }}

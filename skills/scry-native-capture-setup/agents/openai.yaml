@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scry native capture setup"
+  short_description: "Set up SwiftUI, Compose or React Native app capture for Scry and verify the bundle"
+  default_prompt: "Use $scry-native-capture-setup to set up this mobile app so Scry can capture its screens."
