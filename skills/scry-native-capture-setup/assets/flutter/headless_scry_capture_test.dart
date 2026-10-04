@@ -20,6 +20,16 @@ void main() {
     fontsReady = true;
   });
 
+  // Runs before any capture: every font a registered screen draws with (theme default and explicit families) must be
+  // readable, otherwise the run fails here and no screenshot is written.
+  testWidgets('every registered screen draws with fonts that loaded', (tester) async {
+    expect(fontsReady, isTrue, reason: 'fonts did not load: refusing to write a screenshot');
+    for (final s in scryScreens) {
+      await tester.pumpWidget(scryApp(s.build()));
+      await assertScryScreenFontsReadable(tester, s.id);
+    }
+  });
+
   for (final s in scryScreens) {
     testWidgets('capture ${s.id}', (tester) async {
       expect(fontsReady, isTrue, reason: 'fonts did not load: refusing to write a screenshot');

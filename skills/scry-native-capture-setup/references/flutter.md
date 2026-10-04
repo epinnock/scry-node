@@ -94,7 +94,11 @@ folder is common): merge into it, and keep the user's existing tests untouched.
 the app declares under `flutter: fonts:` in `pubspec.yaml`). It then measures "iiii" against "WWWW" in each family: equal widths mean a placeholder font. If the SDK fonts
 or a declared family did not load, the run fails with `scry capture: fonts did not load ...`, no screenshots are
 written and `capture.sh` stops before building a bundle: never ship screenshots with placeholder blocks.
+Package fonts (`packages/<pkg>/<family>` entries in the manifest) are loaded too, and before any capture every
+family a registered screen actually draws with (the theme's default and any explicit `fontFamily`) is probed, so a
+family that is not bundled fails the run instead of uploading blocks.
 Fix: `flutter precache` and declare the app's fonts in `pubspec.yaml`.
+A monospace font can be refused although it loaded, because all its letters are equally wide and the probe cannot tell it from a placeholder: the run fails closed, so bundle a proportional font for the capture or say that screen was skipped.
 Fonts fetched at run time (the `google_fonts` package's default) cannot load offline: bundle the font files as
 assets, or accept that those screens fall back to Roboto, and say which. `SCRY_NO_FONTS=1 bash scripts/capture.sh
 headless` skips the loading to prove the guard stops the run; it is a test hook, not an option to offer.

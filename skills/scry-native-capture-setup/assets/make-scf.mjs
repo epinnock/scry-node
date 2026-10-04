@@ -9,7 +9,8 @@
 // screens.json: [{ "id": "menu", "kind": "screen", "title": ["Screens"], "name": "Menu", "file": "App/Screens/Menu.swift", "line": 12 }, ...]
 // (kind is "screen" or "component" and defaults to "screen"; title groups captures in Scry)
 // Each screen needs <shots>/<id>.png. A missing PNG is listed in counts.skipped (reason "error", the closest value the
-// spec's enum allows) and the script exits 1, so a half-captured run never looks green.
+// spec's enum allows) and the script exits 1, so a half-captured run never looks green. A shot that is a symlink or does
+// not start with the 8-byte PNG signature is refused the same way (never copied).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -84,11 +85,35 @@ if (badIds.length) {
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'images'), { recursive: true });
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
+function unsafeShot(p) {
+  const st = fs.lstatSync(p);
+  if (st.isSymbolicLink()) return 'it is a symlink';
+  if (!st.isFile()) return 'it is not a regular file';
+  const fd = fs.openSync(p, 'r');
+  try {
+    const head = Buffer.alloc(PNG_SIGNATURE.length);
+    const n = fs.readSync(fd, head, 0, head.length, 0);
+    return n === head.length && head.equals(PNG_SIGNATURE) ? '' : 'it is not a PNG (bad 8-byte signature)';
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 const captures = [];
 const skipped = [];
 for (const s of screens) {
   const src = path.join(shots, `${s.id}.png`);
-  if (!fs.existsSync(src)) {
+  if (!fs.existsSync(src) && !isLink(src)) {
+    skipped.push({ id: s.id, reason: 'error' });
+    continue;
+  }
+  // Only a plain PNG file is copied: a symlink (it could point anywhere on this machine) or a non-PNG is refused and the
+  // screen is listed as skipped, so the run exits 1 and nothing outside the shots folder lands in the bundle.
+  const bad = unsafeShot(src);
+  if (bad) {
+    console.error(`make-scf: not copying ${src}: ${bad}`);
     skipped.push({ id: s.id, reason: 'error' });
     continue;
   }
