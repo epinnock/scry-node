@@ -2,12 +2,15 @@
 // Write an SCF 1.0 bundle (scf.json + images/) from a screens file and a folder of PNGs.
 // Usage: node scripts/make-scf.mjs --platform ios|android --screens <screens.json> --shots <dir> --out <dir>
 //        [--device "iPhone 16"] [--device-os "iOS 18.6"] [--scale 3] [--tool-name "my capture script"] [--tool-version 1.0.0]
+//        node scripts/make-scf.mjs --framework flutter --platform android|ios|other ...   (Flutter: kind flutter-golden)
 // The device is written as an object { name, os } (source.device and defaults.capture.device), the shape the dashboard
-// reads; --device-os is optional and `os` is left out when it is not given.
+// reads; --device-os (alias --os) is optional and `os` is left out when it is not given.
+// Flutter: platform android -> method emulator, ios -> simulator, other -> headless-render (flutter_test, no device).
 // screens.json: [{ "id": "menu", "kind": "screen", "title": ["Screens"], "name": "Menu", "file": "App/Screens/Menu.swift", "line": 12 }, ...]
 // (kind is "screen" or "component" and defaults to "screen"; title groups captures in Scry)
 // Each screen needs <shots>/<id>.png. A missing PNG is listed in counts.skipped (reason "error", the closest value the
-// spec's enum allows) and the script exits 1, so a half-captured run never looks green.
+// spec's enum allows) and the script exits 1, so a half-captured run never looks green. A shot that is a symlink or does
+// not start with the 8-byte PNG signature is refused the same way (never copied).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -54,13 +57,22 @@ const KINDS = {
   ios: { kind: 'swiftui-preview', framework: 'swiftui', method: 'simulator' },
   android: { kind: 'compose-preview', framework: 'compose', method: 'emulator' },
 };
-const k = KINDS[platform] ?? (console.error('--platform must be ios or android'), process.exit(2));
+const FLUTTER_KINDS = {
+  ios: { kind: 'flutter-golden', framework: 'flutter', method: 'simulator' },
+  android: { kind: 'flutter-golden', framework: 'flutter', method: 'emulator' },
+  other: { kind: 'flutter-golden', framework: 'flutter', method: 'headless-render' },
+};
+const isFlutter = args.framework === 'flutter';
+if (args.framework !== undefined && !isFlutter) { console.error('--framework, when given, must be flutter'); process.exit(2); }
+const k = (isFlutter ? FLUTTER_KINDS : KINDS)[platform] ??
+  (console.error(isFlutter ? '--platform must be android, ios or other (with --framework flutter)' : '--platform must be ios or android'), process.exit(2));
 const screens = JSON.parse(fs.readFileSync(need('screens'), 'utf8'));
 const shots = need('shots');
 const out = need('out');
 refuseOut(out);
-const scale = Number(args.scale ?? (platform === 'ios' ? 3 : 2.625));
-const device = args.device ? { name: args.device, ...(args['device-os'] ? { os: args['device-os'] } : {}) } : undefined;
+const scale = Number(args.scale ?? (platform === 'ios' || platform === 'other' ? 3 : 2.625));
+const deviceOs = args['device-os'] ?? args.os;
+const device = args.device ? { name: args.device, ...(deviceOs ? { os: deviceOs } : {}) } : undefined;
 
 // Screen ids are used in shell commands and regexes by the capture scripts: accept only a plain shape.
 const ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -73,11 +85,35 @@ if (badIds.length) {
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'images'), { recursive: true });
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
+function unsafeShot(p) {
+  const st = fs.lstatSync(p);
+  if (st.isSymbolicLink()) return 'it is a symlink';
+  if (!st.isFile()) return 'it is not a regular file';
+  const fd = fs.openSync(p, 'r');
+  try {
+    const head = Buffer.alloc(PNG_SIGNATURE.length);
+    const n = fs.readSync(fd, head, 0, head.length, 0);
+    return n === head.length && head.equals(PNG_SIGNATURE) ? '' : 'it is not a PNG (bad 8-byte signature)';
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 const captures = [];
 const skipped = [];
 for (const s of screens) {
   const src = path.join(shots, `${s.id}.png`);
-  if (!fs.existsSync(src)) {
+  if (!fs.existsSync(src) && !isLink(src)) {
+    skipped.push({ id: s.id, reason: 'error' });
+    continue;
+  }
+  // Only a plain PNG file is copied: a symlink (it could point anywhere on this machine) or a non-PNG is refused and the
+  // screen is listed as skipped, so the run exits 1 and nothing outside the shots folder lands in the bundle.
+  const bad = unsafeShot(src);
+  if (bad) {
+    console.error(`make-scf: not copying ${src}: ${bad}`);
     skipped.push({ id: s.id, reason: 'error' });
     continue;
   }

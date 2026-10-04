@@ -1,6 +1,6 @@
 ---
 name: scry-native-capture-setup
-description: Set up a native mobile app (SwiftUI, Jetpack Compose, or React Native) so Scry can capture its screens, then verify the capture bundle. Use when someone wants an iOS, Android or React Native app mapped in Scry, asks how to add Scry screen capture to a mobile app, or needs a capture script, screen registry, fixtures or CI for it. Not for UIKit-only or Flutter apps; for those, point the user to references/bundle.md (the capture bundle format) instead of improvising. It never uploads and never reads, writes or prints an API key.
+description: Set up a native mobile app (SwiftUI, Jetpack Compose, React Native, or Flutter) so Scry can capture its screens, then verify the capture bundle. Use when someone wants an iOS, Android, React Native or Flutter app mapped in Scry, asks how to add Scry screen capture to a mobile app, or needs a capture script, screen registry, fixtures or CI for it. Not for UIKit-only apps; for those, point the user to references/bundle.md (the capture bundle format) instead of improvising. It never uploads and never reads, writes or prints an API key.
 ---
 
 # Set up native app capture for Scry
@@ -22,21 +22,29 @@ reference lists (`make-scf.mjs` and the scripts must stay byte-identical otherwi
 
 ## Pick the path
 
-1. Inspect the repo: `*.xcodeproj` / `Package.swift` (SwiftUI), `build.gradle(.kts)` with
+1. Inspect the repo. Look for `pubspec.yaml` first: one with `flutter:` under `dependencies` (`sdk: flutter`)
+   is a Flutter app, and its generated `ios/Runner.xcodeproj` and `android/app/build.gradle` are not a SwiftUI
+   or Compose app. Otherwise: `*.xcodeproj` / `Package.swift` (SwiftUI), `build.gradle(.kts)` with
    `androidx.compose` (Compose), `package.json` with `react-native` / `expo`.
 2. Read only the reference for that path:
    - SwiftUI: [references/swiftui.md](references/swiftui.md)
    - Compose: [references/compose.md](references/compose.md)
    - React Native or Expo: [references/react-native.md](references/react-native.md). It uses the
      built-in `scry capture rn`; there is no script to copy.
+   - Flutter: [references/flutter.md](references/flutter.md). Dev-only test files and scripts, nothing in
+     `lib/`; it can capture on an emulator or simulator, or headless with no device. Read it, then follow the
+     Flutter notes below instead of the SwiftUI/Compose hook steps.
    - Both an iOS and an Android app: do one, verify it, then the other.
-3. UIKit-only, Flutter, Kotlin Multiplatform without Compose, or anything else: say this skill does
+3. UIKit-only, Kotlin Multiplatform without Compose, or anything else: say this skill does
    not cover it and stop. Do not improvise a hook. [references/bundle.md](references/bundle.md)
    describes the bundle if the user wants to write their own script.
+   When the repo is not a SwiftUI, Jetpack Compose, React Native or Flutter app (UIKit-only, a CLI, a web app, anything
+   else), make no changes and tell the user the capture bundle page, `references/bundle.md`, explains how any other
+   source can ship a capture bundle.
 4. A SwiftUI app that mixes in UIKit is fine if the screens to map are SwiftUI views; say which
    screens you cannot map.
 
-## What you add (SwiftUI and Compose)
+## What you add (SwiftUI and Compose; Flutter differs, see below)
 
 Only these, nothing else in the user's app:
 
@@ -118,10 +126,28 @@ Never overwrite a file the user already has: merge into it.
    unset (run `env -u SCRY_API_KEY -u STORYBOOK_DEPLOYER_API_KEY npx @scrymore/scry-deployer upload
    .scry/capture --dry-run` if the shell may have one).
 
+## Flutter, in short
+
+Everything is in [references/flutter.md](references/flutter.md); this is what differs from the steps above.
+There is no launch hook, no entry-point wiring and no change in `lib/`: the registry and tests live in
+`integration_test/`, `test/`, `test_driver/` and `scripts/`, and `pubspec.yaml` gains only `integration_test` and
+`flutter_test` under `dev_dependencies` (both ship inside the Flutter SDK). Steps 1, 3, 4, 7 and 8 apply as written
+(registry with stable ids, fixtures, look at the screenshots, hand the upload to the user). Capture is
+`bash scripts/capture.sh android|ios|headless`: `android` and `ios` need an emulator or simulator; `headless`
+needs only the Flutter SDK, so with no device run that, and tell the user which path they got (both draw the
+app's own Flutter widgets; a headless bundle is platform `other`, never "the iOS look"). No Flutter SDK on the machine: write the files, do not claim a capture ran, and list the exact
+commands and expected output for the user. Expected dry-run line: `Bundle valid: N captures, source
+flutter-golden:other.` (`:android` / `:ios` on a device). If the headless run stops with `scry capture: fonts did not load`,
+that is the guard working: fix the fonts (`flutter precache`), do not work around it. Two device-path gotchas
+(details in the reference): several booted simulators need `IOS_UDID=<udid>`, and the Android test must keep
+immersive mode or the PNGs carry a status-bar band. A fresh Android emulator needs the script's settle wait and drive watchdog
+(it exits 4 with the cause and retry command instead of hanging).
+
 ## Rules
 
 - No new dependency in the user's app, project file settings or build config. The hook is plain
-  SwiftUI / Compose.
+  SwiftUI / Compose. Flutter: only `integration_test` and `flutter_test` as `dev_dependencies`, nothing under
+  `dependencies:`, nothing in `lib/`, `android/` or `ios/`.
 - CI, only if asked: copy the matching `assets/scry-capture-*.yml` and keep its guards. It runs on
   a push to the default branch only (set the branch name to match the repo's), never on
   `pull_request` or `pull_request_target`, never on a self-hosted runner, with `permissions:
@@ -143,5 +169,7 @@ Never overwrite a file the user already has: merge into it.
 
 The hooks, `capture.sh` scripts and `make-scf.mjs` ran end to end on the Kettle sample apps (iOS 18.6
 simulator, Pixel 6 API 34 emulator): bundles pass `--dry-run` and the release builds hold no capture
-code. The CI templates have not run on a hosted runner. Untested: classic (non-synchronized) Xcode
+code. The Flutter templates ran headless on a scratch app (Flutter 3.47.6, Linux): valid bundle, two runs
+byte-identical, the font guard stops the run; the emulator and simulator paths run in the Kettle Flutter sample
+(scryorg/scry-sample-flutter). The CI templates have not run on a hosted runner. Untested: classic (non-synchronized) Xcode
 projects, multi-module Android apps, `singleTop` activities.

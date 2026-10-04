@@ -52,4 +52,22 @@ if (bad.length) { console.error("FAIL: broken relative links: " + bad.join(", ")
 const files = fs.readdirSync(dir, { recursive: true }).filter((f) => fs.statSync(path.join(dir, f)).isFile());
 console.log(`frontmatter ok: name=${fm.name}, description ${fm.description.length} chars, ${files.length} files installed`);
 '
+
+# scry-native-capture-setup covers Flutter (feature flutter-capture): the Flutter files must have landed, the
+# skill must not still refuse Flutter, and UIKit-only must still be refused with the pointer to bundle.md.
+if [ "$SKILL" = scry-native-capture-setup ]; then
+  D="$TMP/project/.agents/skills/$SKILL"
+  for f in references/flutter.md references/bundle.md assets/make-scf.mjs assets/flutter/capture.sh assets/flutter/screens.dart \
+           assets/flutter/screens.json assets/flutter/scry_capture_test.dart assets/flutter/headless_scry_capture_test.dart \
+           assets/flutter/test_driver_integration_test.dart assets/flutter/scry_fonts.dart assets/flutter/scry_registry_test.dart; do
+    [ -f "$D/$f" ] || { echo "FAIL: $f missing from the installed skill" >&2; exit 1; }
+  done
+  if grep -Eqi 'not for[^.]*flutter|UIKit-only, Flutter' "$D/SKILL.md"; then
+    echo "FAIL: SKILL.md still refuses Flutter" >&2; exit 1
+  fi
+  grep -qi 'UIKit-only' "$D/SKILL.md" && grep -q 'references/bundle.md' "$D/SKILL.md" \
+    || { echo "FAIL: SKILL.md no longer refuses UIKit-only with the pointer to references/bundle.md" >&2; exit 1; }
+  grep -q 'references/flutter.md' "$D/SKILL.md" || { echo "FAIL: SKILL.md does not link references/flutter.md" >&2; exit 1; }
+  echo "flutter: reference and assets installed, Flutter no longer refused, UIKit-only still refused"
+fi
 echo "PASS: $SKILL installs and parses"
