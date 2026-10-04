@@ -38,6 +38,9 @@ reference lists (`make-scf.mjs` and the scripts must stay byte-identical otherwi
 3. UIKit-only, Kotlin Multiplatform without Compose, or anything else: say this skill does
    not cover it and stop. Do not improvise a hook. [references/bundle.md](references/bundle.md)
    describes the bundle if the user wants to write their own script.
+   When the repo is not a SwiftUI, Jetpack Compose, React Native or Flutter app (UIKit-only, a CLI, a web app, anything
+   else), make no changes and tell the user the capture bundle page, `references/bundle.md`, explains how any other
+   source can ship a capture bundle.
 4. A SwiftUI app that mixes in UIKit is fine if the screens to map are SwiftUI views; say which
    screens you cannot map.
 
