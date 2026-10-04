@@ -2,8 +2,10 @@
 // Write an SCF 1.0 bundle (scf.json + images/) from a screens file and a folder of PNGs.
 // Usage: node scripts/make-scf.mjs --platform ios|android --screens <screens.json> --shots <dir> --out <dir>
 //        [--device "iPhone 16"] [--device-os "iOS 18.6"] [--scale 3] [--tool-name "my capture script"] [--tool-version 1.0.0]
+//        node scripts/make-scf.mjs --framework flutter --platform android|ios|other ...   (Flutter: kind flutter-golden)
 // The device is written as an object { name, os } (source.device and defaults.capture.device), the shape the dashboard
-// reads; --device-os is optional and `os` is left out when it is not given.
+// reads; --device-os (alias --os) is optional and `os` is left out when it is not given.
+// Flutter: platform android -> method emulator, ios -> simulator, other -> headless-render (flutter_test, no device).
 // screens.json: [{ "id": "menu", "kind": "screen", "title": ["Screens"], "name": "Menu", "file": "App/Screens/Menu.swift", "line": 12 }, ...]
 // (kind is "screen" or "component" and defaults to "screen"; title groups captures in Scry)
 // Each screen needs <shots>/<id>.png. A missing PNG is listed in counts.skipped (reason "error", the closest value the
@@ -54,13 +56,22 @@ const KINDS = {
   ios: { kind: 'swiftui-preview', framework: 'swiftui', method: 'simulator' },
   android: { kind: 'compose-preview', framework: 'compose', method: 'emulator' },
 };
-const k = KINDS[platform] ?? (console.error('--platform must be ios or android'), process.exit(2));
+const FLUTTER_KINDS = {
+  ios: { kind: 'flutter-golden', framework: 'flutter', method: 'simulator' },
+  android: { kind: 'flutter-golden', framework: 'flutter', method: 'emulator' },
+  other: { kind: 'flutter-golden', framework: 'flutter', method: 'headless-render' },
+};
+const isFlutter = args.framework === 'flutter';
+if (args.framework !== undefined && !isFlutter) { console.error('--framework, when given, must be flutter'); process.exit(2); }
+const k = (isFlutter ? FLUTTER_KINDS : KINDS)[platform] ??
+  (console.error(isFlutter ? '--platform must be android, ios or other (with --framework flutter)' : '--platform must be ios or android'), process.exit(2));
 const screens = JSON.parse(fs.readFileSync(need('screens'), 'utf8'));
 const shots = need('shots');
 const out = need('out');
 refuseOut(out);
-const scale = Number(args.scale ?? (platform === 'ios' ? 3 : 2.625));
-const device = args.device ? { name: args.device, ...(args['device-os'] ? { os: args['device-os'] } : {}) } : undefined;
+const scale = Number(args.scale ?? (platform === 'ios' || platform === 'other' ? 3 : 2.625));
+const deviceOs = args['device-os'] ?? args.os;
+const device = args.device ? { name: args.device, ...(deviceOs ? { os: deviceOs } : {}) } : undefined;
 
 // Screen ids are used in shell commands and regexes by the capture scripts: accept only a plain shape.
 const ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;

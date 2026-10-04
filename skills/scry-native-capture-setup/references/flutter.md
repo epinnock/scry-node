@@ -1,0 +1,124 @@
+# Flutter (Android, iOS or no device)
+
+Needs the Flutter SDK on `PATH` (use the app's own version; the sample is pinned to 3.47.6) and Node 20+.
+`android` also needs `adb`, one running emulator and JDK 17; `ios` needs a Mac with Xcode and an iOS
+simulator; `headless` needs nothing else. Source of truth for every asset below: the Kettle sample
+(scryorg/scry-sample-flutter); `assets/flutter/` are copies, except `screens.dart` and `screens.json`,
+which are templates to fill in.
+
+## Two ways to capture, one bundle format
+
+| | `bash scripts/capture.sh android` / `ios` | `bash scripts/capture.sh headless` |
+|---|---|---|
+| How | `flutter drive` runs one `integration_test` on an emulator or simulator | `flutter test` renders each screen with no device |
+| Look | The real device: system fonts, real pixel density | Flutter Material look at 390 x 844 pt, 3x. **Not the iOS look**, whatever the app targets |
+| Bundle | `flutter-golden`, platform `android` or `ios`, method `emulator` or `simulator`, device name and OS | `flutter-golden`, platform `other`, method `headless-render`, device `flutter_test 390x844@3x` |
+| Use it when | A simulator or emulator exists. This is the one to show your team | No device (a laptop without Xcode, CI without an emulator). Seconds, same pixels on every run |
+
+Tell the user which they got, and say plainly that a headless bundle is a Material rendering. Do not call
+it an iOS capture. Both are the same bundle format and the same upload.
+
+## What you add (dev only, nothing in `lib/`)
+
+| File | Source |
+|---|---|
+| `integration_test/scry/screens.dart` (registry + app shell) | `assets/flutter/screens.dart`, then fill in |
+| `integration_test/scry_capture_test.dart` (device path) | `assets/flutter/scry_capture_test.dart`, verbatim |
+| `test_driver/integration_test.dart` (writes the screenshots) | `assets/flutter/test_driver_integration_test.dart`, verbatim |
+| `test/scry_capture_test.dart` (headless path, font guard) | `assets/flutter/headless_scry_capture_test.dart`, verbatim |
+| `scripts/capture.sh` | `assets/flutter/capture.sh`, verbatim |
+| `scripts/make-scf.mjs` | `assets/make-scf.mjs` (shared with the other paths), verbatim |
+| `scripts/screens.json` | `assets/flutter/screens.json`, then one entry per registry entry |
+
+Plus `integration_test` and `flutter_test` under `dev_dependencies` in `pubspec.yaml` (both are
+`sdk: flutter`: they ship inside the Flutter SDK, there is no pub.dev package and no version to pin) and
+`.scry/` in `.gitignore`. Nothing else: no change in `lib/`, no new `dependencies:` entry, no change to
+`android/` or `ios/`. Never overwrite a file the user already has (an `integration_test/` or `test_driver/`
+folder is common): merge into it, and keep the user's existing tests untouched.
+
+## Steps
+
+1. **Check it is an app.** `pubspec.yaml` has `flutter:` under `dependencies` (`sdk: flutter`) and the project has
+   a `lib/main.dart` with a `main()`. A Flutter package or plugin without an app is not covered: say so and stop.
+   A Flutter app also contains `ios/Runner.xcodeproj` and `android/app/build.gradle`: those are Flutter's
+   generated shells. Do not treat them as a SwiftUI or Compose app.
+2. **Dev dependencies.** Add the two entries above if missing, then `flutter pub get`.
+3. **Registry.** Copy `assets/flutter/screens.dart` to `integration_test/scry/screens.dart` and fill it in:
+   - Import the app's screens as `package:<pubspec name>/...`.
+   - `scryApp(screen)`: the app's own shell, the same `MaterialApp` (or `CupertinoApp` / `.router`) theme,
+     locale, text scale and localisation delegates as `main.dart`, so a screenshot looks like the app. If the
+     app needs providers (Provider, Riverpod, Bloc, get_it), wrap the screen with fixture overrides here. Do not
+     change `lib/` to make a screen easy to build.
+   - One `ScryScreen(id, name, kind, file, line, build)` per screen. `id` is stable (a route or type name, never
+     a display title; letters, digits, `.`, `_`, `-`). Default: every top-level screen, at most about 10 to start.
+     `file` and `line` are where the widget is declared.
+4. **Fixtures.** Whatever a screen reads (network, clock, randomness, signed-in user, platform plugins) is
+   replaced by a constant in `build`: `DateTime(2026, 1, 1, 9, 41)`, constant lists, `Image.memory` or
+   `AssetImage` instead of `Image.network`. Two captures must be identical. Plugin calls throw
+   `MissingPluginException` headless and may raise a permission prompt on a device: keep them out of fixtures.
+   If the app has tests, add a registry test of your own (not in `assets/`): ids unique and stable, and each
+   `file`/`line` still holds the declaration, because hand-written file and line drift.
+5. **Screen list.** Write `scripts/screens.json` (`id`, `kind` `screen` or `component`, `title` grouping, `name`,
+   `file`, `line`) from the registry, same ids in the same order. Set `kind` to `component` for a widget shown
+   alone (it is captured on a full-screen canvas, not a tight crop). The headless test fails if the two lists differ.
+6. **Copy the rest** (tests, driver, `capture.sh`, `make-scf.mjs`), verbatim.
+7. **Capture and validate.** Check what exists: `command -v flutter`, `adb devices`, `xcrun simctl list devices
+   available`. No `flutter`: stop after writing files, do not claim a capture ran, and list for the user the
+   exact commands below. A simulator or emulator exists: run that path. Otherwise run `headless`.
+   ```
+   bash scripts/capture.sh headless        # or: android | ios
+   npx @scrymore/scry-deployer upload .scry/capture --dry-run
+   ```
+   `--dry-run` needs no key and no project id: run it with none set. Expected (N = registered screens):
+   `scf: N/N captured, 0 skipped -> .scry/capture`, then `Bundle valid: N captures, source flutter-golden:other.`
+   (`flutter-golden:android` / `flutter-golden:ios` on a device). `scf: 4/5 captured, 1 skipped` or exit code 1
+   means a screen did not render: fix it, do not lower the count.
+   Emulators and simulators only: the Android path refuses a physical phone (it installs the debug app) unless
+   the user sets `ALLOW_PHYSICAL=1`; never set it yourself. The first Android build takes minutes.
+8. **Look at the screenshots** in `.scry/capture/images/`: readable text and icons (not black blocks), no debug
+   banner, no loading spinner, no permission dialog, no broken-image icon. A valid bundle can hold bad images.
+9. **Hand the upload to the user; do not run it**, exactly as in SKILL.md (`SCRY_PROJECT_ID` and `SCRY_API_KEY`
+   exported in their own shell, then `npx @scrymore/scry-deployer upload .scry/capture`).
+
+## Fonts (headless)
+
+`flutter test` draws every glyph as a black block (the "Ahem" test font) until real fonts are loaded.
+`test/scry_capture_test.dart` loads the SDK's Roboto and MaterialIcons from
+`$FLUTTER_ROOT/bin/cache/artifacts/material_fonts` and every family in the app's `FontManifest.json` (the fonts
+the app declares under `flutter: fonts:` in `pubspec.yaml`). If Roboto or MaterialIcons did not load, the test
+fails with `scry: fonts did not load ...`, no screenshots are written and `capture.sh` stops before building a
+bundle, deleting any earlier one: never ship screenshots with placeholder blocks. Fix: `flutter precache`.
+Fonts fetched at run time (the `google_fonts` package's default) cannot load offline: bundle the font files as
+assets, or accept that those screens fall back to Roboto, and say which. `SCRY_FONTS=off bash scripts/capture.sh
+headless` skips the loading to prove the guard stops the run; it is a test hook, not an option to offer.
+
+## Release builds stay clean
+
+Everything above lives in `integration_test/`, `test/`, `test_driver/` and `scripts/`, which a release build
+never compiles, and nothing imports it from `lib/`. Check it (the sample does) and say you did:
+`git diff --stat -- lib/ android/ ios/` is empty, and `git diff pubspec.yaml` touches only `dev_dependencies:`.
+To prove it on a release build, `flutter build apk --release` and search the APK's `libapp.so` for `scry`: there is
+no hit.
+
+## Common failures
+
+- A blank image on Android: `convertFlutterSurfaceToImage()` must run before the
+  first screenshot (the test does it); a customised test must keep it.
+- A test that never ends: the screen has an indeterminate progress indicator or a looping animation and a
+  customised test used `pumpAndSettle`. The templates use a fixed `pump(Duration)`; keep it.
+- `MissingPluginException`, or a screen that needs the network: the fixture still calls a plugin or `http`.
+- `Image.network` shows a broken-image icon headless: use `Image.memory`/`AssetImage` in the fixture.
+- `flutter drive` on iOS cannot find the simulator: `DEVICE="<name>"` (default `iPhone 16`) must name an
+  available simulator; `xcrun simctl list devices available | grep -i iphone`.
+- Different pixels on another machine: headless pixels depend on the Flutter version and OS. Pin the version
+  (the sample pins 3.47.6) and capture on the same one.
+
+## Known limits
+
+- The device path captures the app surface only: no status bar, no navigation bar (the Compose path's `screencap`
+  includes the status bar; the SwiftUI path does not). Say so if the user compares.
+- Headless is a Material rendering at 390 x 844 pt: no iOS look, no safe area, no plugins, no network.
+- No widget tree (`structure/`) or source text goes into the bundle. Flutter web and Linux desktop capture are
+  not covered. A bundle holds only `scf.json` and images.
+- Untested here: apps that need a native plugin on the screens to capture (mock it in the fixture), flavours,
+  and Flutter modules embedded in a native app.
