@@ -119,10 +119,17 @@ no hit.
   The device test calls `SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive)` and pumps 500 ms before
   building the screen, so the PNG holds only the app (a screen that draws under the status bar shows its own
   inset band otherwise). A customised test must keep both lines.
-- `flutter drive` hangs after the six tests pass and no PNGs appear (fresh Android emulator): Android's "Viewing full
-  screen" immersive confirmation took focus. `capture.sh android` marks it confirmed before the drive
-  (`adb shell settings put secure immersive_mode_confirmations confirmed`) and restores the old value on exit; a
-  customised script must keep that line, and on a device run by hand run it once.
+- `flutter drive` hangs after the tests start or pass and no PNGs appear (fresh Android emulator). Two separate causes:
+  (1) Android's "Viewing full screen" immersive confirmation took focus. `capture.sh android` marks it confirmed before
+  the drive (`adb shell settings put secure immersive_mode_confirmations confirmed`) and restores the old value on
+  exit; a customised script must keep that line, and on a device run by hand run it once. (2) A brand-new emulator
+  keeps doing first-boot work (default roles, package updates) for a minute or two after `sys.boot_completed`; that
+  changes the assets configuration, which a manifest `configChanges` cannot absorb, so Android destroys and relaunches
+  the app and `flutter drive` stays attached to the dead one. `capture.sh android` waits for the device to settle
+  (uptime of at least 150 s, no activity relaunch for 25 s), watches the drive, retries it once on a relaunch, and
+  otherwise exits 4 with the likely causes and the retry command. Knobs: `CAPTURE_SETTLE_QUIET`,
+  `CAPTURE_SETTLE_UPTIME`, `CAPTURE_SETTLE_MAX`, `CAPTURE_DONE_GRACE`, `CAPTURE_DRIVE_TIMEOUT`,
+  `CAPTURE_BOOT_TIMEOUT`, `CAPTURE_RETRIES`. A customised script must keep the settle and the watchdog.
 - A test that never ends: the screen has an indeterminate progress indicator or a looping animation and a
   customised test used `pumpAndSettle`. The templates use a fixed `pump(Duration)`; keep it.
 - `MissingPluginException`, or a screen that needs the network: the fixture still calls a plugin or `http`.

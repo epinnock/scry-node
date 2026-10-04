@@ -43,7 +43,8 @@ node scripts/make-scf.mjs --check --out "$OUT" || exit 1
 rm -rf "$OUT"
 
 SHOTS="$(mktemp -d)"
-cleanup() { rm -rf "$SHOTS"; if declare -F restore_device >/dev/null; then restore_device; fi; }
+WORK="$(mktemp -d)" # logs of the drive and of the device watcher; never part of the bundle
+cleanup() { if declare -F restore_device >/dev/null; then restore_device; fi; rm -rf "$SHOTS" "$WORK"; }
 trap cleanup EXIT
 
 # Screen ids reach file names and the bundle: accept only a plain shape.
@@ -78,9 +79,21 @@ headless)
 
 android)
   command -v adb >/dev/null || { echo "capture: adb not found (install Android platform-tools)" >&2; exit 2; }
-  adb wait-for-device
-  # Wait until the system has finished booting; installing earlier fails on a cold emulator.
-  until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done
+  # Wait (bounded) until the device has finished booting and the package manager answers; a cold emulator fails earlier.
+  BOOT_TIMEOUT="${CAPTURE_BOOT_TIMEOUT:-600}"
+  if [ -z "${ANDROID_SERIAL:-}" ] && [ "$(adb devices | awk 'NR > 1 && $2 == "device"' | wc -l)" -gt 1 ]; then
+    echo "capture: more than one Android device is attached: set ANDROID_SERIAL=<serial> to pick one (adb devices)" >&2
+    exit 3
+  fi
+  waited=0
+  until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && adb shell pm path android >/dev/null 2>&1; do
+    sleep 2; waited=$((waited + 2))
+    if [ "$waited" -ge "$BOOT_TIMEOUT" ]; then
+      echo "capture: no booted Android device after ${BOOT_TIMEOUT}s. Likely causes: no emulator is running (adb devices), the emulator is still booting on a busy machine, or adb is wedged (adb kill-server)." >&2
+      echo "capture: retry: bash scripts/capture.sh android" >&2
+      exit 4
+    fi
+  done
   gp() { adb shell getprop "$1" | tr -d '\r'; }
   model="$(gp ro.product.model | tr '[:upper:]' '[:lower:]')"
   if [ "$(gp ro.kernel.qemu)" = 1 ] || [ "$(gp ro.boot.qemu)" = 1 ] || [[ "$model" == *sdk* ]] || [[ "$model" == *emulator* ]]; then
@@ -93,6 +106,97 @@ android)
   serial="${ANDROID_SERIAL:-$(adb get-serialno | tr -d '\r')}"
   check_env serial "$serial" '^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$'
 
+  # --- Reliability: a fresh emulator keeps doing first-boot work (default roles, package state, resource overlays) for a
+  # minute or more after sys.boot_completed, longer on a busy machine. That work changes the resource assets path, which
+  # Android answers by destroying and relaunching every visible activity (it cannot be declared in configChanges). If it
+  # lands mid-run, the app restarts, `flutter drive` stays attached to the dead app and never finishes: no PNG, no exit.
+  # So: (1) wait until the device is quiet before the drive, (2) watch for that relaunch and for a drive that is done
+  # but not finishing, (3) stop it, say why, and retry the drive once.
+  # Tuning (seconds, all optional): CAPTURE_SETTLE_QUIET 25, CAPTURE_SETTLE_UPTIME 150, CAPTURE_SETTLE_MAX 300,
+  # CAPTURE_DONE_GRACE 60, CAPTURE_DRIVE_TIMEOUT 900, CAPTURE_RETRIES 1.
+  WATCH_LOG="$WORK/relaunch.log"; WATCH_PID=""
+  start_watch() { # every activity relaunch on the device, one line each (event-log tag wm_relaunch_resume_activity)
+    : >"$WATCH_LOG"
+    ( adb -s "$serial" logcat -b events -T 1 2>/dev/null | grep --line-buffered wm_relaunch_resume_activity >>"$WATCH_LOG" ) &
+    WATCH_PID=$!
+  }
+  stop_watch() { if [ -n "$WATCH_PID" ]; then pkill -P "$WATCH_PID" 2>/dev/null || true; kill "$WATCH_PID" 2>/dev/null || true; WATCH_PID=""; fi; }
+  APP_ID="$(grep -hEo 'applicationId[ =]+"[A-Za-z][A-Za-z0-9_.]*"' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null | grep -Eo '"[^"]+"' | tr -d '"' | head -1 || true)"
+  EXPECTED="$(printf '%s\n' "$ids" | grep -c . || true)"
+
+  settle() { # wait until the device has been up long enough and no activity has been relaunched for a while
+    local quiet="${CAPTURE_SETTLE_QUIET:-25}" minup="${CAPTURE_SETTLE_UPTIME:-150}" max="${CAPTURE_SETTLE_MAX:-300}"
+    local t0 now up lines last lastchange
+    t0="$(date +%s)"; lastchange="$t0"; last="$(wc -l <"$WATCH_LOG")"
+    # A canary: Settings is a visible activity too, so it is relaunched by the same events and makes them countable.
+    adb -s "$serial" shell am start -a android.settings.SETTINGS >/dev/null 2>&1 || true
+    while :; do
+      sleep 3
+      now="$(date +%s)"
+      up="$(adb -s "$serial" shell cat /proc/uptime 2>/dev/null | tr -d '\r' | cut -d. -f1)"; up="${up:-0}"
+      lines="$(wc -l <"$WATCH_LOG")"
+      if [ "$lines" != "$last" ]; then last="$lines"; lastchange="$now"; fi
+      if [ "$up" -ge "$minup" ] && [ $((now - lastchange)) -ge "$quiet" ]; then break; fi
+      if [ $((now - t0)) -ge "$max" ]; then echo "capture: device still busy after ${max}s (uptime ${up}s); continuing, the watchdog will retry if the app is relaunched" >&2; break; fi
+    done
+    adb -s "$serial" shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+    echo "capture: device settled after $(( $(date +%s) - t0 ))s (uptime ${up}s, $last activity relaunches seen)" >&2
+  }
+
+  drive_android() {
+    local retries="${CAPTURE_RETRIES:-1}" grace="${CAPTURE_DONE_GRACE:-60}" limit="${CAPTURE_DRIVE_TIMEOUT:-900}"
+    local attempt=1 dlog="$WORK/drive.log" mark dpid tpid start now done_at reason rc pngs
+    start_watch
+    while :; do
+      settle
+      rm -f "$SHOTS"/*.png; : >"$dlog"
+      mark="$(wc -l <"$WATCH_LOG")"
+      set -m # the drive gets its own process group so the watchdog can stop it and everything it started
+      SCRY_OUT="$SHOTS" flutter drive --driver=test_driver/integration_test.dart \
+        --target=integration_test/scry_capture_test.dart -d "$serial" >"$dlog" 2>&1 &
+      dpid=$!
+      set +m
+      tail -n +1 -f "$dlog" & tpid=$!
+      reason=""; done_at=""; start="$(date +%s)"
+      while kill -0 "$dpid" 2>/dev/null; do
+        sleep 2
+        now="$(date +%s)"
+        if [ -n "$APP_ID" ] && tail -n +"$((mark + 1))" "$WATCH_LOG" | grep -F "$APP_ID/" >/dev/null; then
+          reason="the app was destroyed and relaunched on the device mid-run (the emulator was still doing first-boot work), so flutter drive is attached to a dead app"; break
+        fi
+        if [ -z "$done_at" ] && grep -qE 'All tests passed|Some tests failed' "$dlog"; then done_at="$now"; fi
+        if [ -n "$done_at" ] && [ $((now - done_at)) -ge "$grace" ]; then
+          reason="the tests reported done ${grace}s ago but flutter drive has not finished and no screenshot was written"; break
+        fi
+        if [ $((now - start)) -ge "$limit" ]; then reason="flutter drive did not finish within ${limit}s"; break; fi
+      done
+      rc=0
+      if [ -n "$reason" ]; then
+        kill -TERM -- "-$dpid" 2>/dev/null || true; sleep 2; kill -KILL -- "-$dpid" 2>/dev/null || true
+        wait "$dpid" 2>/dev/null || true
+        [ -z "$APP_ID" ] || adb -s "$serial" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+      else
+        wait "$dpid" || rc=$?
+      fi
+      sleep 1; kill "$tpid" 2>/dev/null || true; wait "$tpid" 2>/dev/null || true
+      pngs="$(find "$SHOTS" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')"
+      if [ -z "$reason" ] && [ "$rc" = 0 ] && [ "$pngs" = "$EXPECTED" ]; then stop_watch; return 0; fi
+      if [ -z "$reason" ] && [ "$rc" != 0 ]; then
+        stop_watch; echo "capture: flutter drive failed (exit $rc); the test output above says why. No bundle written." >&2; exit "$rc"
+      fi
+      [ -n "$reason" ] || reason="flutter drive exited 0 but wrote $pngs of $EXPECTED screenshots"
+      if [ "$attempt" -le "$retries" ]; then
+        echo "capture: attempt $attempt failed: $reason. Retrying the drive (attempt $((attempt + 1)))." >&2
+        attempt=$((attempt + 1)); continue
+      fi
+      stop_watch
+      echo "capture: android capture failed after $attempt attempt(s): $reason." >&2
+      echo "capture: likely causes: (1) a freshly created emulator still doing first-boot work: wait a few minutes after boot and retry; (2) a busy machine starving the emulator: close other emulators and builds; (3) a system dialog holding focus: look at the screen (adb -s $serial exec-out screencap -p > screen.png); (4) a wedged adb: adb kill-server." >&2
+      echo "capture: retry with: ANDROID_SERIAL=$serial bash scripts/capture.sh android" >&2
+      exit 4
+    done
+  }
+
   # Remember the settings this script changes and put them back on exit (a value of "null" means it was unset).
   prev() { # <namespace> <name>
     adb -s "$serial" shell settings get "$1" "$2" | tr -d '\r'
@@ -104,6 +208,7 @@ android)
     else adb -s "$serial" shell settings put "$1" "$2" "$3" >/dev/null 2>&1 || true; fi
   }
   restore_device() {
+    stop_watch
     restore_setting global window_animation_scale "$PREV_WINDOW"
     restore_setting global transition_animation_scale "$PREV_TRANSITION"
     restore_setting global animator_duration_scale "$PREV_ANIMATOR"
@@ -121,7 +226,7 @@ android)
   scale="${SCALE:-$(node -e 'console.log(Number(process.argv[1]) / 160)' "$density")}"
   device="${DEVICE:-$(gp ro.boot.qemu.avd_name)}"
   [ -n "$device" ] || device="$(gp ro.product.model)"
-  drive "$serial"
+  drive_android
   make_scf android "$device" "Android $(gp ro.build.version.release)" "$scale"
   ;;
 

@@ -137,7 +137,8 @@ commands and expected output for the user. Expected dry-run line: `Bundle valid:
 flutter-golden:other.` (`:android` / `:ios` on a device). If the headless run stops with `scry capture: fonts did not load`,
 that is the guard working: fix the fonts (`flutter precache`), do not work around it. Two device-path gotchas
 (details in the reference): several booted simulators need `IOS_UDID=<udid>`, and the Android test must keep
-immersive mode or the PNGs carry a status-bar band.
+immersive mode or the PNGs carry a status-bar band. A fresh Android emulator needs the script's settle wait and drive watchdog
+(it exits 4 with the cause and retry command instead of hanging).
 
 ## Rules
 
