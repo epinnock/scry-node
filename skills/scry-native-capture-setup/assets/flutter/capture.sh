@@ -15,7 +15,7 @@
 #   ANDROID_SERIAL  pick one device when several are attached
 #   IOS_UDID  pick one simulator when several are booted (xcrun simctl list devices booted)
 #   ALLOW_PHYSICAL=1  allow a physical Android device (default: emulators only). The script changes the animation
-#                     scales on the device and restores them on exit.
+#                     scales and the immersive-mode confirmation on the device and restores them on exit.
 #   SCALE     pixels per logical pixel recorded in scf.json (default: from the device density; ios 3)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -87,27 +87,34 @@ android)
     :
   elif [ "${ALLOW_PHYSICAL:-0}" != 1 ]; then
     echo "capture: the attached device ($(gp ro.product.model)) does not look like an emulator; refusing to install the app or change its settings." >&2
-    echo "capture: start an emulator, or set ALLOW_PHYSICAL=1 to use this device (animation scales are restored on exit)." >&2
+    echo "capture: start an emulator, or set ALLOW_PHYSICAL=1 to use this device (animation scales and the immersive-mode confirmation are restored on exit)." >&2
     exit 3
   fi
   serial="${ANDROID_SERIAL:-$(adb get-serialno | tr -d '\r')}"
   check_env serial "$serial" '^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$'
 
   # Remember the settings this script changes and put them back on exit (a value of "null" means it was unset).
-  prev() { adb -s "$serial" shell settings get global "$1" | tr -d '\r'; }
-  PREV_WINDOW="$(prev window_animation_scale)"; PREV_TRANSITION="$(prev transition_animation_scale)"; PREV_ANIMATOR="$(prev animator_duration_scale)"
-  restore_setting() { # <name> <previous value>
-    if [ -z "$2" ] || [ "$2" = null ]; then adb -s "$serial" shell settings delete global "$1" >/dev/null 2>&1 || true
-    else adb -s "$serial" shell settings put global "$1" "$2" >/dev/null 2>&1 || true; fi
+  prev() { # <namespace> <name>
+    adb -s "$serial" shell settings get "$1" "$2" | tr -d '\r'
+  }
+  PREV_WINDOW="$(prev global window_animation_scale)"; PREV_TRANSITION="$(prev global transition_animation_scale)"
+  PREV_ANIMATOR="$(prev global animator_duration_scale)"; PREV_IMMERSIVE="$(prev secure immersive_mode_confirmations)"
+  restore_setting() { # <namespace> <name> <previous value>
+    if [ -z "$3" ] || [ "$3" = null ]; then adb -s "$serial" shell settings delete "$1" "$2" >/dev/null 2>&1 || true
+    else adb -s "$serial" shell settings put "$1" "$2" "$3" >/dev/null 2>&1 || true; fi
   }
   restore_device() {
-    restore_setting window_animation_scale "$PREV_WINDOW"
-    restore_setting transition_animation_scale "$PREV_TRANSITION"
-    restore_setting animator_duration_scale "$PREV_ANIMATOR"
+    restore_setting global window_animation_scale "$PREV_WINDOW"
+    restore_setting global transition_animation_scale "$PREV_TRANSITION"
+    restore_setting global animator_duration_scale "$PREV_ANIMATOR"
+    restore_setting secure immersive_mode_confirmations "$PREV_IMMERSIVE"
   }
   for s in window_animation_scale transition_animation_scale animator_duration_scale; do
     adb -s "$serial" shell settings put global "$s" 0
   done
+  # The test enters immersive mode. On a fresh emulator Android then shows a "Viewing full screen" confirmation that
+  # takes focus, and `flutter drive` never finishes. Marking it confirmed up front makes a fresh AVD work unattended.
+  adb -s "$serial" shell settings put secure immersive_mode_confirmations confirmed
 
   # The real pixel scale (density / 160), so images line up with Figma frames in logical pixels.
   density="$(adb -s "$serial" shell wm density | grep -Eo '[0-9]+' | tail -1)"

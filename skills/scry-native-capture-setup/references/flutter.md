@@ -119,6 +119,10 @@ no hit.
   The device test calls `SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive)` and pumps 500 ms before
   building the screen, so the PNG holds only the app (a screen that draws under the status bar shows its own
   inset band otherwise). A customised test must keep both lines.
+- `flutter drive` hangs after the six tests pass and no PNGs appear (fresh Android emulator): Android's "Viewing full
+  screen" immersive confirmation took focus. `capture.sh android` marks it confirmed before the drive
+  (`adb shell settings put secure immersive_mode_confirmations confirmed`) and restores the old value on exit; a
+  customised script must keep that line, and on a device run by hand run it once.
 - A test that never ends: the screen has an indeterminate progress indicator or a looping animation and a
   customised test used `pumpAndSettle`. The templates use a fixed `pump(Duration)`; keep it.
 - `MissingPluginException`, or a screen that needs the network: the fixture still calls a plugin or `http`.
