@@ -33,6 +33,8 @@ check flutter/scry_capture_test.dart          "$FLU/integration_test/scry_captur
 check flutter/test_driver_integration_test.dart "$FLU/test_driver/integration_test.dart"
 check flutter/headless_scry_capture_test.dart "$FLU/test/scry_capture_test.dart"
 check flutter/capture.sh                      "$FLU/scripts/capture.sh"
+check flutter/scry_fonts.dart                 "$FLU/test/scry_fonts.dart"
+check flutter/scry_registry_test.dart         "$FLU/test/scry_registry_test.dart"
 for t in screens.dart screens.json; do [ -f "$F/$t" ] && echo "ok     flutter/$t template present" || { echo "MISSING flutter/$t template"; fail=1; }; done
 [ -f "$FLU/integration_test/scry/screens.dart" ] && [ -f "$FLU/scripts/screens.json" ] \
   && echo "ok     Flutter sample has its registry and screens.json" || { echo "MISSING Flutter sample registry or screens.json"; fail=1; }

@@ -131,11 +131,13 @@ There is no launch hook, no entry-point wiring and no change in `lib/`: the regi
 `flutter_test` under `dev_dependencies` (both ship inside the Flutter SDK). Steps 1, 3, 4, 7 and 8 apply as written
 (registry with stable ids, fixtures, look at the screenshots, hand the upload to the user). Capture is
 `bash scripts/capture.sh android|ios|headless`: `android` and `ios` need an emulator or simulator; `headless`
-needs only the Flutter SDK, so with no device run that, and tell the user it is a Flutter Material rendering,
-not the iOS look. No Flutter SDK on the machine: write the files, do not claim a capture ran, and list the exact
+needs only the Flutter SDK, so with no device run that, and tell the user which path they got (both draw the
+app's own Flutter widgets; a headless bundle is platform `other`, never "the iOS look"). No Flutter SDK on the machine: write the files, do not claim a capture ran, and list the exact
 commands and expected output for the user. Expected dry-run line: `Bundle valid: N captures, source
-flutter-golden:other.` (`:android` / `:ios` on a device). If the headless run stops with `scry: fonts did not load`,
-that is the guard working: fix the fonts (`flutter precache`), do not work around it.
+flutter-golden:other.` (`:android` / `:ios` on a device). If the headless run stops with `scry capture: fonts did not load`,
+that is the guard working: fix the fonts (`flutter precache`), do not work around it. Two device-path gotchas
+(details in the reference): several booted simulators need `IOS_UDID=<udid>`, and the Android test must keep
+immersive mode or the PNGs carry a status-bar band.
 
 ## Rules
 

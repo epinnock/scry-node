@@ -59,7 +59,7 @@ if [ "$SKILL" = scry-native-capture-setup ]; then
   D="$TMP/project/.agents/skills/$SKILL"
   for f in references/flutter.md references/bundle.md assets/make-scf.mjs assets/flutter/capture.sh assets/flutter/screens.dart \
            assets/flutter/screens.json assets/flutter/scry_capture_test.dart assets/flutter/headless_scry_capture_test.dart \
-           assets/flutter/test_driver_integration_test.dart; do
+           assets/flutter/test_driver_integration_test.dart assets/flutter/scry_fonts.dart assets/flutter/scry_registry_test.dart; do
     [ -f "$D/$f" ] || { echo "FAIL: $f missing from the installed skill" >&2; exit 1; }
   done
   if grep -Eqi 'not for[^.]*flutter|UIKit-only, Flutter' "$D/SKILL.md"; then

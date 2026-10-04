@@ -3,29 +3,33 @@
 Needs the Flutter SDK on `PATH` (use the app's own version; the sample is pinned to 3.47.6) and Node 20+.
 `android` also needs `adb`, one running emulator and JDK 17; `ios` needs a Mac with Xcode and an iOS
 simulator; `headless` needs nothing else. Source of truth for every asset below: the Kettle sample
-(scryorg/scry-sample-flutter); `assets/flutter/` are copies, except `screens.dart` and `screens.json`,
-which are templates to fill in.
+(scryorg/scry-sample-flutter); `assets/flutter/` are copies of its files, except `screens.dart` and
+`screens.json`, which are templates to fill in (the sample's own registry names Kettle screens).
 
 ## Two ways to capture, one bundle format
 
 | | `bash scripts/capture.sh android` / `ios` | `bash scripts/capture.sh headless` |
 |---|---|---|
 | How | `flutter drive` runs one `integration_test` on an emulator or simulator | `flutter test` renders each screen with no device |
-| Look | The real device: system fonts, real pixel density | Flutter Material look at 390 x 844 pt, 3x. **Not the iOS look**, whatever the app targets |
+| Look | The real device's screen size and pixel density, the app surface only (no status or navigation bar) | A 390 x 844 pt surface at 3x, whatever the app targets |
 | Bundle | `flutter-golden`, platform `android` or `ios`, method `emulator` or `simulator`, device name and OS | `flutter-golden`, platform `other`, method `headless-render`, device `flutter_test 390x844@3x` |
 | Use it when | A simulator or emulator exists. This is the one to show your team | No device (a laptop without Xcode, CI without an emulator). Seconds, same pixels on every run |
 
-Tell the user which they got, and say plainly that a headless bundle is a Material rendering. Do not call
-it an iOS capture. Both are the same bundle format and the same upload.
+Both paths draw the app's own Flutter widgets with its own theme and fonts: both are the Flutter Material look,
+and neither is a rendering of native iOS or Android controls. Do not describe either as "the iOS look". Tell the
+user which path they got; a headless bundle is platform `other`, not iOS or Android. Same bundle format and
+same upload.
 
 ## What you add (dev only, nothing in `lib/`)
 
 | File | Source |
 |---|---|
-| `integration_test/scry/screens.dart` (registry + app shell) | `assets/flutter/screens.dart`, then fill in |
+| `integration_test/scry/screens.dart` (registry + `scryApp` shell) | `assets/flutter/screens.dart`, then fill in |
 | `integration_test/scry_capture_test.dart` (device path) | `assets/flutter/scry_capture_test.dart`, verbatim |
 | `test_driver/integration_test.dart` (writes the screenshots) | `assets/flutter/test_driver_integration_test.dart`, verbatim |
-| `test/scry_capture_test.dart` (headless path, font guard) | `assets/flutter/headless_scry_capture_test.dart`, verbatim |
+| `test/scry_capture_test.dart` (headless path) | `assets/flutter/headless_scry_capture_test.dart`, verbatim |
+| `test/scry_fonts.dart` (font loader and guard for the headless path) | `assets/flutter/scry_fonts.dart`, verbatim |
+| `test/scry_registry_test.dart` (registry and `screens.json` agree) | `assets/flutter/scry_registry_test.dart`, verbatim |
 | `scripts/capture.sh` | `assets/flutter/capture.sh`, verbatim |
 | `scripts/make-scf.mjs` | `assets/make-scf.mjs` (shared with the other paths), verbatim |
 | `scripts/screens.json` | `assets/flutter/screens.json`, then one entry per registry entry |
@@ -56,12 +60,14 @@ folder is common): merge into it, and keep the user's existing tests untouched.
    replaced by a constant in `build`: `DateTime(2026, 1, 1, 9, 41)`, constant lists, `Image.memory` or
    `AssetImage` instead of `Image.network`. Two captures must be identical. Plugin calls throw
    `MissingPluginException` headless and may raise a permission prompt on a device: keep them out of fixtures.
-   If the app has tests, add a registry test of your own (not in `assets/`): ids unique and stable, and each
-   `file`/`line` still holds the declaration, because hand-written file and line drift.
+   `test/scry_registry_test.dart` (copied in step 6) fails when `scripts/screens.json` and the registry differ in
+   ids, order, name, file or line, or when a listed file is missing. Hand-written file and line drift: run it
+   after any edit (`flutter test test/scry_registry_test.dart`).
 5. **Screen list.** Write `scripts/screens.json` (`id`, `kind` `screen` or `component`, `title` grouping, `name`,
    `file`, `line`) from the registry, same ids in the same order. Set `kind` to `component` for a widget shown
-   alone (it is captured on a full-screen canvas, not a tight crop). The headless test fails if the two lists differ.
-6. **Copy the rest** (tests, driver, `capture.sh`, `make-scf.mjs`), verbatim.
+   alone (it is captured on a full-screen canvas, not a tight crop). The registry test fails if the two lists differ.
+6. **Copy the rest** (the three tests, `scry_fonts.dart`, the registry test, the driver, `capture.sh`,
+   `make-scf.mjs`), verbatim, then run `flutter test test/scry_registry_test.dart`.
 7. **Capture and validate.** Check what exists: `command -v flutter`, `adb devices`, `xcrun simctl list devices
    available`. No `flutter`: stop after writing files, do not claim a capture ran, and list for the user the
    exact commands below. A simulator or emulator exists: run that path. Otherwise run `headless`.
@@ -83,13 +89,14 @@ folder is common): merge into it, and keep the user's existing tests untouched.
 ## Fonts (headless)
 
 `flutter test` draws every glyph as a black block (the "Ahem" test font) until real fonts are loaded.
-`test/scry_capture_test.dart` loads the SDK's Roboto and MaterialIcons from
+`test/scry_fonts.dart`, called by `test/scry_capture_test.dart`, loads the SDK's Roboto and MaterialIcons from
 `$FLUTTER_ROOT/bin/cache/artifacts/material_fonts` and every family in the app's `FontManifest.json` (the fonts
-the app declares under `flutter: fonts:` in `pubspec.yaml`). If Roboto or MaterialIcons did not load, the test
-fails with `scry: fonts did not load ...`, no screenshots are written and `capture.sh` stops before building a
-bundle, deleting any earlier one: never ship screenshots with placeholder blocks. Fix: `flutter precache`.
+the app declares under `flutter: fonts:` in `pubspec.yaml`). It then measures "iiii" against "WWWW" in each family: equal widths mean a placeholder font. If the SDK fonts
+or a declared family did not load, the run fails with `scry capture: fonts did not load ...`, no screenshots are
+written and `capture.sh` stops before building a bundle: never ship screenshots with placeholder blocks.
+Fix: `flutter precache` and declare the app's fonts in `pubspec.yaml`.
 Fonts fetched at run time (the `google_fonts` package's default) cannot load offline: bundle the font files as
-assets, or accept that those screens fall back to Roboto, and say which. `SCRY_FONTS=off bash scripts/capture.sh
+assets, or accept that those screens fall back to Roboto, and say which. `SCRY_NO_FONTS=1 bash scripts/capture.sh
 headless` skips the loading to prove the guard stops the run; it is a test hook, not an option to offer.
 
 ## Release builds stay clean
@@ -104,10 +111,17 @@ no hit.
 
 - A blank image on Android: `convertFlutterSurfaceToImage()` must run before the
   first screenshot (the test does it); a customised test must keep it.
+- A grey or black band across the top (or bottom) of the Android emulator PNGs: the system bars were not hidden.
+  The device test calls `SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive)` and pumps 500 ms before
+  building the screen, so the PNG holds only the app (a screen that draws under the status bar shows its own
+  inset band otherwise). A customised test must keep both lines.
 - A test that never ends: the screen has an indeterminate progress indicator or a looping animation and a
   customised test used `pumpAndSettle`. The templates use a fixed `pump(Duration)`; keep it.
 - `MissingPluginException`, or a screen that needs the network: the fixture still calls a plugin or `http`.
 - `Image.network` shows a broken-image icon headless: use `Image.memory`/`AssetImage` in the fixture.
+- `capture.sh ios` stops with `more than one simulator is booted`: it never guesses between simulators. Run
+  `xcrun simctl list devices booted`, then `IOS_UDID=<udid> bash scripts/capture.sh ios`; the others are left
+  alone. `IOS_UDID is not a booted simulator`: `xcrun simctl boot <udid>` first.
 - `flutter drive` on iOS cannot find the simulator: `DEVICE="<name>"` (default `iPhone 16`) must name an
   available simulator; `xcrun simctl list devices available | grep -i iphone`.
 - Different pixels on another machine: headless pixels depend on the Flutter version and OS. Pin the version
@@ -115,9 +129,9 @@ no hit.
 
 ## Known limits
 
-- The device path captures the app surface only: no status bar, no navigation bar (the Compose path's `screencap`
-  includes the status bar; the SwiftUI path does not). Say so if the user compares.
-- Headless is a Material rendering at 390 x 844 pt: no iOS look, no safe area, no plugins, no network.
+- The device path captures the app surface only: immersive mode hides the status bar and navigation bar (the
+  Compose path's `screencap` includes the status bar; the SwiftUI path does not). Say so if the user compares.
+- Headless is the same Flutter widgets at 390 x 844 pt: no device safe area, no plugins, no network.
 - No widget tree (`structure/`) or source text goes into the bundle. Flutter web and Linux desktop capture are
   not covered. A bundle holds only `scf.json` and images.
 - Untested here: apps that need a native plugin on the screens to capture (mock it in the fixture), flavours,

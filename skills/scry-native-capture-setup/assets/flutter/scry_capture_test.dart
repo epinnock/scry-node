@@ -1,9 +1,10 @@
-// Scry capture on a simulator or emulator (dev only). Run through `bash scripts/capture.sh android|ios`, which
-// calls `flutter drive` with test_driver/integration_test.dart. One run takes one screenshot per registered screen.
-// The image is the app surface only (no status bar or navigation bar).
+// integration_test/scry_capture_test.dart - the device capture: one test per registered screen, run by
+// `flutter drive` on an emulator or simulator (scripts/capture.sh android|ios). The PNG is written by
+// test_driver/integration_test.dart on the host. Dev-only: nothing under lib/ imports this.
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart' show SystemChrome, SystemUiMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -15,10 +16,12 @@ void main() {
   final wanted = only.isEmpty ? null : only.split(',').toSet();
   for (final s in scryScreens.where((s) => wanted == null || wanted.contains(s.id))) {
     testWidgets('capture ${s.id}', (tester) async {
+      // Hide the status and navigation bars so the PNG is the app only (no system chrome, no inset band).
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpWidget(scryApp(s.build()));
-      // Android needs the surface converted to an image once before the first screenshot, or the frame is blank.
+      // Android renders into a SurfaceView: it must be converted to an image before a screenshot is possible.
       if (!kIsWeb && Platform.isAndroid) await binding.convertFlutterSurfaceToImage();
-      // Not pumpAndSettle: a progress indicator or looping animation never settles.
       await tester.pump(const Duration(milliseconds: 200));
       await binding.takeScreenshot(s.id);
     });
