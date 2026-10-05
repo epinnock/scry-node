@@ -1,0 +1,51 @@
+# Capture the app's screens headless (no emulator) and upload them to Scry, on every push to the default branch.
+# Never on a pull request: the upload needs SCRY_API_KEY, and a pull request must not get a secret.
+# Setup: repository variable SCRY_PROJECT_ID (proj_xxxxxxxx) and repository secret SCRY_API_KEY (sk_live_xxxxxxxx).
+# Without both (a fork, a fresh clone) the capture and the bundle check still run and the upload is skipped with a
+# notice: the run stays green.
+# The headless capture is a Flutter Material rendering on the runner, not an iOS or Android device look: the bundle
+# is platform `other` ("Flutter · Other"). For an emulator or simulator capture see references/flutter.md.
+# Change `main` below if the repository's default branch has another name (keep the guard on the upload step in step).
+name: scry-capture
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22 }
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          # Use the Flutter version the app builds with: headless pixels depend on it (the sample pins 3.47.6).
+          flutter-version: 3.47.6
+          channel: stable
+          cache: true
+      - name: Capture headless
+        run: bash scripts/capture.sh headless
+      - name: The bundle is valid
+        run: npx @scrymore/scry-deployer@0.11.1 upload .scry/capture --dry-run
+      # The key is read by this step only. With no key or no project id the step ends green with a notice and
+      # uploads nothing; the values are never printed.
+      - name: Upload to Scry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if [ -z "$SCRY_API_KEY" ] || [ -z "$SCRY_PROJECT_ID" ]; then
+            msg="Scry upload skipped. Set the repository secret SCRY_API_KEY and the repository variable SCRY_PROJECT_ID to enable it. The capture and the bundle check above ran."
+            echo "::notice title=Scry upload skipped::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          npx @scrymore/scry-deployer@0.11.1 upload .scry/capture
+        env:
+          SCRY_PROJECT_ID: ${{ vars.SCRY_PROJECT_ID }}
+          SCRY_API_KEY: ${{ secrets.SCRY_API_KEY }}
+      # Device path (optional, heavier, not shipped here): an emulator or simulator capture needs a different runner
+      # and `bash scripts/capture.sh android|ios` instead of `headless`. See references/flutter.md before adding one.
