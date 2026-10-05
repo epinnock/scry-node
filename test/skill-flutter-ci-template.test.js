@@ -9,7 +9,9 @@ const { spawnSync } = require('child_process');
 
 const TEMPLATE = path.join(__dirname, '..', 'skills', 'scry-native-capture-setup', 'assets', 'flutter', 'scry-capture-flutter.yml');
 const DEPLOYER = '@scrymore/scry-deployer@0.11.1';
-const GATE = "if: github.event_name == 'push' && github.ref == 'refs/heads/main'";
+const DEFAULT_REF = "format('refs/heads/{0}', github.event.repository.default_branch)";
+const GATE = `if: github.event_name == 'push' && github.ref == ${DEFAULT_REF}`;
+const NOTE_GATE = `if: github.event_name == 'push' && github.ref != ${DEFAULT_REF}`;
 const FORBIDDEN_TRIGGERS = ['pull_request', 'pull_request_target', 'workflow_dispatch', 'schedule', 'workflow_run', 'issue_comment', 'repository_dispatch'];
 const PIN = /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/;
 
@@ -64,7 +66,7 @@ function secretRules(lines) {
   const withSecret = stepsOf(lines).filter((s) => s.includes('secrets'));
   const upload = withSecret[0] || '';
   if (withSecret.length !== 1 || !upload.includes('name: Upload to Scry')) out.push('secret is not only on the Upload to Scry step');
-  if (!upload.includes(GATE)) out.push('upload step is not gated on a push to refs/heads/main');
+  if (!upload.includes(GATE)) out.push('upload step is not gated on a push to the repository default branch');
   if (!upload.includes('[ -z "$SCRY_API_KEY" ]') || !upload.includes('[ -z "$SCRY_PROJECT_ID" ]')) out.push('upload step does not test for missing credentials');
   if (!upload.includes('::notice ') || !upload.includes('exit 0')) out.push('upload step does not skip with a notice and exit 0');
   if (lines.some((l) => l.includes('echo') && l.includes('$SCRY_API_KEY'))) out.push('prints the key');
@@ -95,9 +97,67 @@ function deviceRules(lines) {
   return out;
 }
 
+// Evaluate a step's `if:` expression for one event. Only the subset the template uses is understood: clauses joined
+// by `&&`, each `<operand> == <operand>` or `<operand> != <operand>`, an operand being a 'string', a github.* path or
+// format('refs/heads/{0}', <github.* path>). Anything else throws, so the template cannot drift past the test.
+function operand(text, github) {
+  const s = text.trim();
+  if (s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1);
+  const fmt = "format('refs/heads/{0}', ";
+  if (s.startsWith(fmt) && s.endsWith(')')) return `refs/heads/${operand(s.slice(fmt.length, -1), github)}`;
+  if (s.startsWith('github.')) return s.slice('github.'.length).split('.').reduce((o, k) => o[k], github);
+  throw new Error(`unsupported expression: ${s}`);
+}
+
+function clause(text, github) {
+  for (const op of ['==', '!=']) {
+    const at = text.indexOf(` ${op} `);
+    if (at > -1) {
+      const same = operand(text.slice(0, at), github) === operand(text.slice(at + 4), github);
+      return op === '==' ? same : !same;
+    }
+  }
+  throw new Error(`unsupported clause: ${text}`);
+}
+
+function runsFor(stepText, github) {
+  const line = stepText.split('\n').find((l) => l.trim().startsWith('if: '));
+  if (!line) return true; // no condition: the step always runs
+  return line.trim().slice(4).split(' && ').every((c) => clause(c, github));
+}
+
+// Every (pushed branch, default branch) pair where a push reaches the workflow: the upload runs on the default
+// branch, and on any other branch the notice step runs, so a push never ends with neither (the silent skip, F71).
+// A pull request never runs the upload.
+const BRANCHES = ['main', 'trunk', 'master'];
+const ghFor = (event_name, branch, def) => ({ event_name, ref: `refs/heads/${branch}`, ref_name: branch, event: { repository: { default_branch: def } } });
+
+function pushGaps(upload, note, branch, def) {
+  const gh = ghFor('push', branch, def);
+  const up = runsFor(upload, gh);
+  const nt = note !== '' && runsFor(note, gh);
+  const where = `push to ${branch} with default ${def}`;
+  const out = [];
+  if (up !== (branch === def)) out.push(`${where}: upload ${up}`);
+  if (!up && !nt) out.push(`${where}: no upload and no notice`);
+  if (up && nt) out.push(`${where}: upload and the not-default notice both run`);
+  return out;
+}
+
+function coverageGaps(text) {
+  const steps = stepsOf(codeLines(text));
+  const upload = steps.find((s) => s.includes('name: Upload to Scry')) || '';
+  const note = steps.find((s) => s.includes('::notice title=Scry upload skipped::') && !s.includes('name: Upload to Scry')) || '';
+  const out = BRANCHES.flatMap((branch) => BRANCHES.flatMap((def) => pushGaps(upload, note, branch, def)));
+  for (const event of ['pull_request', 'pull_request_target', 'workflow_dispatch', 'schedule']) {
+    if (runsFor(upload, ghFor(event, 'main', 'main'))) out.push(`upload runs for ${event}`);
+  }
+  return out;
+}
+
 function violations(text) {
   const lines = codeLines(text);
-  return [...triggerRules(lines), ...permissionRules(lines), ...secretRules(lines), ...pinRules(text, lines), ...deviceRules(lines)];
+  return [...triggerRules(lines), ...permissionRules(lines), ...secretRules(lines), ...pinRules(text, lines), ...deviceRules(lines), ...coverageGaps(text)];
 }
 
 // The upload step's script, extracted from the template, so the skip logic is run for real below.
@@ -157,6 +217,25 @@ describe('flutter CI template (G5 guard)', () => {
     }
   });
 
+  test('a branch rename can never skip the upload silently (F71)', () => {
+    expect(coverageGaps(text)).toEqual([]);
+    // The trigger renamed to another branch while the repository default stays main: no upload, but a notice.
+    const renamed = text.replace('branches: [main]', 'branches: [trunk]');
+    expect(renamed).not.toBe(text);
+    const steps = stepsOf(codeLines(renamed));
+    const note = steps.find((s) => s.includes('Note the skipped upload'));
+    const gh = { event_name: 'push', ref: 'refs/heads/trunk', ref_name: 'trunk', event: { repository: { default_branch: 'main' } } };
+    expect(runsFor(steps.find((s) => s.includes('name: Upload to Scry')), gh)).toBe(false);
+    expect(runsFor(note, gh)).toBe(true);
+    expect(note).toContain('::notice title=Scry upload skipped::');
+    // The same rename to the default branch needs no second edit: the upload runs.
+    expect(runsFor(steps.find((s) => s.includes('name: Upload to Scry')), { ...gh, event: { repository: { default_branch: 'trunk' } } })).toBe(true);
+    // The notice step reads no secret and takes the branch names from env, not from the script text.
+    expect(note).not.toContain('secrets');
+    expect(note.split('        env:')[0].replace(NOTE_GATE, '')).not.toContain('${{');
+    expect(note).toContain(NOTE_GATE);
+  });
+
   describe('the guard fails on a broken copy', () => {
     const pinned = text.split('\n').find((l) => l.includes('actions/checkout@')).trim();
     const cases = {
@@ -170,7 +249,11 @@ describe('flutter CI template (G5 guard)', () => {
       'second secret': (t) => t.replace('${{ vars.SCRY_PROJECT_ID }}', '${{ secrets.SCRY_PROJECT_ID }}'),
       'job-level env hands the key to every step': (t) =>
         t.replace('    timeout-minutes: 30\n', '    timeout-minutes: 30\n    env:\n      SCRY_API_KEY: ${{ secrets.SCRY_API_KEY }}\n'),
-      'upload without the main guard': (t) => t.replace(`        ${GATE}\n`, ''),
+      'upload without the default-branch guard': (t) => t.replace(`        ${GATE}\n`, ''),
+      'upload gated on a hard-coded main (the F71 silent skip)': (t) => t.replace(GATE, "if: github.event_name == 'push' && github.ref == 'refs/heads/main'"),
+      'no notice step for a push to a non-default branch': (t) => t.replace(/ {6}# The same trigger on a branch[\s\S]*?(?= {6}# Device path)/, ''),
+      'notice step never runs': (t) => t.replace(NOTE_GATE, "if: github.event_name == 'pull_request'"),
+      'upload also runs for a pull request': (t) => t.replace(GATE, `if: github.ref == ${DEFAULT_REF}`),
       'write permission': (t) => t.replace('contents: read', 'contents: write'),
       'checkout keeps credentials': (t) => t.replace('persist-credentials: false', 'persist-credentials: true'),
       'deployer unpinned': (t) => t.replace(`npx ${DEPLOYER} upload .scry/capture\n        env`, 'npx @scrymore/scry-deployer upload .scry/capture\n        env'),

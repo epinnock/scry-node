@@ -60,7 +60,8 @@ if [ -f "$y" ]; then
   bad_uses="$(echo "$code" | grep -E '^\s*-?\s*uses:' | grep -Ev 'uses:\s*[A-Za-z0-9._-]+/[A-Za-z0-9._-]+@[0-9a-f]{40}\s+# v[0-9]' || true)"
   [ -z "$bad_uses" ] || { echo "G5 FAIL flutter-ci: action not pinned to a full SHA with a version comment: $bad_uses"; fail=1; }
   echo "$code" | grep -q 'persist-credentials: false' || { echo "G5 FAIL flutter-ci: checkout keeps credentials"; fail=1; }
-  echo "$code" | grep -q "github.ref == 'refs/heads/main'" || { echo "G5 FAIL flutter-ci: upload not gated on main"; fail=1; }
+  echo "$code" | grep -qF "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)" || { echo "G5 FAIL flutter-ci: upload not gated on the default branch"; fail=1; }
+  echo "$code" | grep -qF "github.ref != format('refs/heads/{0}', github.event.repository.default_branch)" || { echo "G5 FAIL flutter-ci: no notice step for a push to a branch that is not the default branch"; fail=1; }
   echo "$code" | grep -q '::notice ' || { echo "G5 FAIL flutter-ci: no skip notice for missing credentials"; fail=1; }
   echo "$code" | grep -Eq 'capture\.sh headless' || { echo "G5 FAIL flutter-ci: not headless"; fail=1; }
   [ "$(echo "$code" | grep -c 'scry-deployer@0.11.1')" -eq 2 ] || { echo "G5 FAIL flutter-ci: deployer not pinned to 0.11.1 on both steps"; fail=1; }

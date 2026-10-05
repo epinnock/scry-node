@@ -150,7 +150,8 @@ immersive mode or the PNGs carry a status-bar band. A fresh Android emulator nee
   `dependencies:`, nothing in `lib/`, `android/` or `ios/`.
 - CI, only if asked: copy the matching `assets/scry-capture-*.yml` (Flutter:
   `assets/flutter/scry-capture-flutter.yml`) and keep its guards. It runs on
-  a push to the default branch only (set the branch name to match the repo's), never on
+  a push to the default branch only (Flutter: if the default branch is not `main`, change `branches: [main]` in the
+  template's `on:` block, the only edit; the upload step compares with the repo's default branch itself), never on
   `pull_request` or `pull_request_target`, never on a self-hosted runner, with `permissions:
   contents: read`, and `SCRY_API_KEY` appears only on the upload step. Tell the user it has not run
   on a hosted runner yet. The Flutter template captures headless on `ubuntu-latest` (platform `other`), keeps

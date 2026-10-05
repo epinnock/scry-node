@@ -98,7 +98,9 @@ on `ubuntu-latest`, checks the bundle with `npx @scrymore/scry-deployer@0.11.1 u
   `SCRY_API_KEY` and the variable `SCRY_PROJECT_ID`. The key is read by the upload step only.
 - Without them (a fork, a fresh clone) the capture and the bundle check still run and the upload step ends green
   with a notice saying it was skipped, so a missing key never turns the run red.
-- Push to the default branch only (`branches: [main]`: rename it if the repo uses another name). Never on
+- Push to the default branch only (`branches: [main]`: if the repo's default branch has another name, change that one
+  line; the upload step compares the pushed branch with the repo's default branch itself, so there is no second place
+  to edit, and a push to a branch that is not the default branch uploads nothing and shows a notice). Never on
   `pull_request` or `pull_request_target`: a pull request, above all one from a fork, must never run in a job that
   can read the key. No `workflow_dispatch`, no `schedule`, no self-hosted runner, `permissions: contents: read`,
   checkout with `persist-credentials: false`, every action pinned to a full commit SHA, the deployer pinned.
