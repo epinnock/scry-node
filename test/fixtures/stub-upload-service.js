@@ -16,6 +16,13 @@
 // --ci-timings reject  that route answers 400 with the issue paths
 // --ci-timings dropped stored, with ci.workflow dropped by the service
 // --ci-timings nobuild that route answers 404 "Build not found" (route exists, build does not)
+// --presign none      POST .../metadata/presign answers 404 (an upload service older than it)
+// --presign ok        the presigned metadata flow: presign -> PUT /put-meta/<key> -> complete,
+//                     and .../metadata/failed marks the build failed (recorded on `failed`)
+// --metadata-put reject403 the PUT to the presigned URL answers 403 (not worth retrying)
+// --metadata-put hang    the PUT is read but never answered (a stalled uplink: the client must time out)
+// --metadata-complete reject400 .../metadata/complete answers 400 (not worth retrying)
+// PUT /put-meta/ bodies are counted, never kept (they are 100 MiB and more).
 // --actions-api ok        GET /repos/:o/:r/actions/runs/:id/attempts/:n/jobs lists this
 //                         job (runner "stub-runner", started 90 s ago); set GITHUB_API_URL
 //                         to the stub's url to use it
@@ -25,14 +32,18 @@
 // metadata archive was sent at all.
 const http = require('http');
 
-function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', metadataRate = 0, log = () => {} } = {}) {
+function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', metadataRate = 0, presign = 'none', metadataPut = 'ok', metadataComplete = 'ok', log = () => {} } = {}) {
   const requests = [];
+  const failed = [];
   let metadataCalls = 0;
   const server = http.createServer((req, res) => {
     const chunks = [];
     const started = Date.now();
     const throttle = metadataRate > 0 && req.method === 'POST' && /\/metadata(\?|$)/.test(req.url);
+    const counted = req.method === 'PUT' && req.url.startsWith('/put-meta/');
+    let counter = 0;
     req.on('data', (c) => {
+      if (counted) { counter += c.length; return; }
       chunks.push(c);
       if (throttle) {
         // Read no faster than metadataRate: TCP backpressure slows the sender.
@@ -42,7 +53,7 @@ function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = '
     });
     req.on('end', () => {
       const body = Buffer.concat(chunks);
-      const entry = { method: req.method, path: req.url.split('?')[0], bytes: body.length, ms: Date.now() - started };
+      const entry = { method: req.method, path: req.url.split('?')[0], query: req.url.split('?')[1] || '', bytes: counted ? counter : body.length, ms: Date.now() - started };
       if (/json/.test(String(req.headers['content-type'] || ''))) {
         try { entry.json = JSON.parse(body.toString('utf8')); } catch (_) { entry.json = null; }
       }
@@ -57,6 +68,20 @@ function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = '
         return send(200, { url: `http://127.0.0.1:${p}/put${entry.path.slice('/presigned-url'.length)}`, buildId: 'stub-build', buildNumber: 1 });
       }
       if (req.method === 'PUT' && entry.path.startsWith('/put/')) return send(200, {});
+      if (req.method === 'PUT' && counted) {
+        if (metadataPut === 'hang') return undefined; // the PUT is read but never answered
+        return metadataPut === 'reject403' ? send(403, { error: 'SignatureDoesNotMatch (stub)' }) : send(200, {});
+      }
+      const meta = entry.path.match(/^\/upload\/([^/]+)\/([^/]+)\/metadata\/(presign|complete|failed)$/);
+      if (req.method === 'POST' && meta && presign === 'ok') {
+        const key = `${meta[1]}/${meta[2]}/builds/1/metadata-screenshots.zip`;
+        const rid = { 'x-scry-request-id': `stub-req-${meta[3]}-0001` };
+        const reply = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json', ...rid }); res.end(JSON.stringify(obj)); };
+        if (meta[3] === 'presign') return reply(200, { url: `http://127.0.0.1:${p}/put-meta/${key}?sig=stub`, key, buildId: 'stub-build', buildNumber: 1 });
+        if (meta[3] === 'failed') { failed.push(entry.json); return reply(200, { success: true, buildNumber: 1 }); }
+        if (metadataComplete === 'reject400') return reply(400, { error: 'metadata zip not found (stub)' });
+        return reply(200, { success: true, queued: true, buildNumber: 1, zipKey: key });
+      }
       if (req.method === 'POST' && /\/coverage$/.test(entry.path)) return send(200, { success: true, buildId: 'stub-build' });
       if (req.method === 'POST' && /\/metadata$/.test(entry.path)) {
         metadataCalls += 1;
@@ -90,7 +115,7 @@ function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = '
   });
   return new Promise((resolve) => {
     server.listen(port, '127.0.0.1', () => {
-      resolve({ server, requests, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => { server.close(r); server.closeAllConnections?.(); }) });
+      resolve({ server, requests, failed, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => { server.close(r); server.closeAllConnections?.(); }) });
     });
   });
 }
@@ -100,7 +125,7 @@ if (require.main === module) {
     const i = process.argv.indexOf(name);
     return i >= 0 ? process.argv[i + 1] : dflt;
   };
-  startStub({ port: Number(arg('--port', '8799')), metadata: arg('--metadata', 'ok'), metadataRate: Number(arg('--metadata-rate', '0')), ciTimings: arg('--ci-timings', 'ok'), actionsApi: arg('--actions-api', 'ok'), log: (l) => console.log(l) })
+  startStub({ port: Number(arg('--port', '8799')), metadata: arg('--metadata', 'ok'), metadataRate: Number(arg('--metadata-rate', '0')), presign: arg('--presign', 'none'), metadataPut: arg('--metadata-put', 'ok'), metadataComplete: arg('--metadata-complete', 'ok'), ciTimings: arg('--ci-timings', 'ok'), actionsApi: arg('--actions-api', 'ok'), log: (l) => console.log(l) })
     .then((s) => console.log(`stub upload service on ${s.url} (metadata: ${arg('--metadata', 'ok')})`));
 }
 

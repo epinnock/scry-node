@@ -520,12 +520,21 @@ function reportMetadataUploadFailed(metadataUpload, uploadResult, logger) {
     const zip = uploadResult?.zipUpload || {};
     const buildNumberSuffix = zip.buildNumber !== undefined ? ` (#${zip.buildNumber})` : '';
     const build = zip.buildId ? `Build ${zip.buildId}${buildNumberSuffix}` : 'The build';
+    let outcome;
+    if (metadataUpload.markedFailed) {
+        outcome = `   ${build} is marked failed on the upload service. Re-run this job to index it.`;
+    } else if (metadataUpload.markFailedUnsupported) {
+        outcome = `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
+            '   so it will not show as failed. Re-run this job to index it.';
+    } else {
+        outcome = `   ${build} is left pending: it could not be marked failed (see the warning above),\n` +
+            '   so it will not show as failed. Re-run this job to index it.';
+    }
     logger.error(
         `\n❌ The metadata upload failed (${metadataUpload.error || 'no reason given'}), so NOTHING WILL BE INDEXED.\n` +
         (metadataUpload.requestId ? `Ref: ${metadataUpload.requestId}\n` : '') +
         HOSTED_NOT_SEARCHABLE + '\n' +
-        `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
-        '   so it will not show as failed. Re-run this job to index it.'
+        outcome
     );
 }
 
