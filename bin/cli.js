@@ -526,8 +526,11 @@ function reportMetadataUploadFailed(metadataUpload, uploadResult, logger) {
         HOSTED_NOT_SEARCHABLE + '\n' +
         (metadataUpload.markedFailed
             ? `   ${build} is marked failed on the upload service. Re-run this job to index it.`
-            : `   ${build} is left pending: it could not be marked failed (see the warning above),\n` +
-              '   so it will not show as failed. Re-run this job to index it.')
+            : metadataUpload.markFailedUnsupported
+                ? `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
+                  '   so it will not show as failed. Re-run this job to index it.'
+                : `   ${build} is left pending: it could not be marked failed (see the warning above),\n` +
+                  '   so it will not show as failed. Re-run this job to index it.')
     );
 }
 

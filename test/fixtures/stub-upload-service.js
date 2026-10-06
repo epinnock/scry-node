@@ -20,6 +20,7 @@
 // --presign ok        the presigned metadata flow: presign -> PUT /put-meta/<key> -> complete,
 //                     and .../metadata/failed marks the build failed (recorded on `failed`)
 // --metadata-put reject403 the PUT to the presigned URL answers 403 (not worth retrying)
+// --metadata-put hang    the PUT is read but never answered (a stalled uplink: the client must time out)
 // --metadata-complete reject400 .../metadata/complete answers 400 (not worth retrying)
 // PUT /put-meta/ bodies are counted, never kept (they are 100 MiB and more).
 // --actions-api ok        GET /repos/:o/:r/actions/runs/:id/attempts/:n/jobs lists this
@@ -68,6 +69,7 @@ function startStub({ port = 0, metadata = 'ok', ciTimings = 'ok', actionsApi = '
       }
       if (req.method === 'PUT' && entry.path.startsWith('/put/')) return send(200, {});
       if (req.method === 'PUT' && counted) {
+        if (metadataPut === 'hang') return undefined; // the PUT is read but never answered
         return metadataPut === 'reject403' ? send(403, { error: 'SignatureDoesNotMatch (stub)' }) : send(200, {});
       }
       const meta = entry.path.match(/^\/upload\/([^/]+)\/([^/]+)\/metadata\/(presign|complete|failed)$/);
