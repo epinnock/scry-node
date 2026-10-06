@@ -524,8 +524,10 @@ function reportMetadataUploadFailed(metadataUpload, uploadResult, logger) {
         `\n❌ The metadata upload failed (${metadataUpload.error || 'no reason given'}), so NOTHING WILL BE INDEXED.\n` +
         (metadataUpload.requestId ? `Ref: ${metadataUpload.requestId}\n` : '') +
         HOSTED_NOT_SEARCHABLE + '\n' +
-        `   ${build} is left pending: the upload service has no way to mark it failed,\n` +
-        '   so it will not show as failed. Re-run this job to index it.'
+        (metadataUpload.markedFailed
+            ? `   ${build} is marked failed on the upload service. Re-run this job to index it.`
+            : `   ${build} is left pending: it could not be marked failed (see the warning above),\n` +
+              '   so it will not show as failed. Re-run this job to index it.')
     );
 }
 

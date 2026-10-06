@@ -143,7 +143,7 @@ describe('N1/N2 console-bound server strings', () => {
 
     const e422 = axiosError(422, { error: evil });
     const errs = [];
-    const meta = await uploadMetadataZip({ defaults: { baseURL: 'https://u' }, post: jest.fn().mockRejectedValue(e422) }, { project: 'p', version: 'v' }, zip(), { info() {}, success() {}, error: (m) => errs.push(m) });
+    const meta = await uploadMetadataZip({ defaults: { baseURL: 'https://u' }, post: jest.fn().mockRejectedValue(e422) }, { project: 'p', version: 'v' }, zip(), { info() {}, success() {}, warn() {}, error: (m) => errs.push(m) });
     expect(meta.error.length).toBeLessThanOrEqual(200);
     expect(meta.error).not.toMatch(/[\u0000-\u001f]/);
     expect(errs.join('')).not.toMatch(/\u001b/);

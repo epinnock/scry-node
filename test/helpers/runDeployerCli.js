@@ -13,8 +13,8 @@ const CLI = path.join(ROOT, 'bin', 'cli.js');
 const FAKE_SBCOV = path.join(ROOT, 'test', 'fixtures', 'fake-sbcov.js');
 const STORYBOOK_DIR = path.join(ROOT, 'test', 'fixtures', 'storybook-static');
 
-async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', metadataRate = 0, env = {}, configFile = null, command = null } = {}) {
-  const stub = await startStub({ metadata, ciTimings, actionsApi, metadataRate });
+async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', ciTimings = 'ok', actionsApi = 'ok', metadataRate = 0, presign = 'none', metadataPut = 'ok', metadataComplete = 'ok', env = {}, configFile = null, command = null } = {}) {
+  const stub = await startStub({ metadata, ciTimings, actionsApi, metadataRate, presign, metadataPut, metadataComplete });
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'scry-deployer-e2e-'));
   const argsFile = path.join(cwd, 'sbcov-args.json');
   if (configFile) fs.writeFileSync(path.join(cwd, '.storybook-deployer.json'), configFile);
@@ -56,6 +56,7 @@ async function runDeployerCli({ args = [], sbcovMode = 'ok', metadata = 'ok', ci
       out,
       sbcovArgs,
       requests: stub.requests.slice(),
+      failed: stub.failed.slice(),
       sentMetadata: stub.requests.some((r) => r.method === 'POST' && /\/metadata$/.test(r.path)),
       hostedStorybook: stub.requests.some((r) => r.method === 'PUT' && /storybook\.zip$/.test(r.path)),
     };
