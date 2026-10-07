@@ -97,6 +97,8 @@ This deploys your Storybook immediately without setting up GitHub Actions.
 
 **You don't need to install anything!** Just use `npx` to run the init command:
 
+Requires Node.js 20.9 or newer (Node 18 is end of life; use `@scrymore/scry-deployer@0.11` if you are stuck on it).
+
 ```bash
 # From npm (recommended)
 npx @scrymore/scry-deployer init --projectId xxx --apiKey yyy
@@ -299,7 +301,7 @@ uploaded and hosted in every case below, so the preview link works; the red run 
 | What happened | Log line | Exit code |
 |---|---|---|
 | Stories captured, metadata uploaded and queued | `⏳ Indexing has been queued, not finished.` | 0 |
-| Metadata upload rejected by the service | `❌ The metadata upload failed (<reason>), so NOTHING WILL BE INDEXED.` | 1 |
+| Metadata upload rejected by the service (a failed PUT or complete also marks the build failed) | `❌ The metadata upload failed (<reason>), so NOTHING WILL BE INDEXED.` | 1 |
 | Metadata uploaded but not queued | `❌ Metadata was uploaded but not queued for processing, so NOTHING WILL BE INDEXED.` | 1 |
 | Analysis captured 0 stories (the empty archive is not uploaded, no build is queued) | `❌ Analysis captured 0 of N stories, so NOTHING WILL BE INDEXED.` plus the first capture error | 1 |
 | Analysis produced no archive (for example, no Playwright browser) | `❌ Analysis produced no metadata, so NOTHING WILL BE INDEXED.` | 1 |
@@ -317,6 +319,16 @@ which does not know the flag, it is not passed and the log says dropped stories 
 
 Before 0.7.0 the metadata-upload failure, the "not queued" case, an empty archive, a non-zero
 scry-sbcov exit and a workflow that simply forgot `--with-analysis` all ended green (ISSUES.md #50).
+
+### Large metadata ZIPs (0.12.0)
+
+The metadata ZIP is sent straight to storage on a presigned URL (presign, PUT, complete), not
+through the upload service, so it can be larger than 100 MiB (limit 2 GiB). It used to be POSTed
+through the service with a 100 MiB cap, and a library whose ZIP passed that (the dashboard's was
+101.5 MiB) indexed nothing and left its build "pending" (ISSUES.md #74). If the PUT or complete step
+fails, the build is marked failed with a reason, the log says `marked failed`, and the run exits 1.
+Against an upload service that has no presign route yet, the old route is used for a ZIP of up to
+100 MiB (the log says so); a larger ZIP stops with `upload service too old for a ZIP this size`.
 
 ### CI time (0.9.0)
 
@@ -787,7 +799,7 @@ See the complete workflow configuration: [`.github/workflows/deploy-pr-preview.y
 Key workflow features:
 - **Triggers**: `pull_request` with types `[opened, synchronize, reopened]`
 - **Permissions**: `contents: read`, `pull-requests: write`
-- **Node version**: 18 (configurable in workflow)
+- **Node version**: 20 (configurable in workflow)
 - **Comment management**: Smart update/create logic to avoid duplicate comments
 
 #### Cleanup

@@ -1,3 +1,11 @@
+// The metadata tests below model an upload service older than the presigned
+// metadata upload: POST .../metadata/presign answers 404, so the deployer uses
+// the old route. The presigned flow is covered by
+// regression-metadata-zip-100mb-limit.test.js.
+const noPresign404 = () => Object.assign(new Error('Request failed with status code 404'), {
+  response: { status: 404, data: { error: 'not found' } },
+});
+
 describe('lib/apiClient', () => {
   afterEach(() => {
     jest.resetModules();
@@ -172,7 +180,7 @@ describe('lib/apiClient', () => {
     const { uploadMetadataZip } = require('../lib/apiClient.js');
     const apiClient = {
       defaults: { baseURL: 'https://api' },
-      post: jest.fn().mockResolvedValue({
+      post: jest.fn().mockRejectedValueOnce(noPresign404()).mockResolvedValue({
         status: 201,
         data: { queued: true, buildNumber: 3, zipKey: 'p/v/builds/3/metadata-screenshots.zip' },
       }),
@@ -224,6 +232,7 @@ describe('lib/apiClient', () => {
         .fn()
         .mockResolvedValueOnce({ data: { url: 'https://upload.example.com/storybook' } })
         .mockResolvedValueOnce({ data: { success: true, buildId: 'build-123', coverageUrl: 'https://r2.example.com/coverage' } })
+        .mockRejectedValueOnce(noPresign404())
         .mockResolvedValueOnce({
           status: 201,
           data: { queued: true, buildNumber: 5, zipKey: 'p/v/builds/5/metadata-screenshots.zip' },
@@ -242,7 +251,7 @@ describe('lib/apiClient', () => {
       expect.objectContaining({ success: true, queued: true, buildNumber: 5 })
     );
     expect(apiClient.post).toHaveBeenNthCalledWith(
-      3,
+      4,
       '/upload/p/v/metadata',
       expect.any(Buffer),
       expect.objectContaining({ headers: { 'Content-Type': 'application/zip' } })
@@ -277,7 +286,7 @@ describe('lib/apiClient build provenance', () => {
     const { uploadMetadataZip } = require('../lib/apiClient.js');
     const apiClient = {
       defaults: { baseURL: 'https://api' },
-      post: jest.fn().mockResolvedValue({ status: 201, data: { queued: true, buildNumber: 3 } }),
+      post: jest.fn().mockRejectedValueOnce(noPresign404()).mockResolvedValue({ status: 201, data: { queued: true, buildNumber: 3 } }),
     };
 
     await uploadMetadataZip(
@@ -288,7 +297,7 @@ describe('lib/apiClient build provenance', () => {
       { commitSha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', branch: 'feature/login' }
     );
 
-    expect(apiClient.post.mock.calls[0][0]).toBe(
+    expect(apiClient.post.mock.calls[1][0]).toBe(
       '/upload/p/v/metadata?commitSha=a1b2c3d4e5f60718293a4b5c6d7e8f9012345678&branch=feature%2Flogin'
     );
 
@@ -310,7 +319,7 @@ describe('lib/apiClient build provenance', () => {
     const { uploadMetadataZip } = require('../lib/apiClient.js');
     const apiClient = {
       defaults: { baseURL: 'https://api' },
-      post: jest.fn().mockResolvedValue({ status: 201, data: { queued: true, buildNumber: 3 } }),
+      post: jest.fn().mockRejectedValueOnce(noPresign404()).mockResolvedValue({ status: 201, data: { queued: true, buildNumber: 3 } }),
     };
 
     // Older callers pass four arguments; the request must be byte-identical to
@@ -322,7 +331,7 @@ describe('lib/apiClient build provenance', () => {
       error: jest.fn(),
     });
 
-    expect(apiClient.post.mock.calls[0][0]).toBe('/upload/p/v/metadata');
+    expect(apiClient.post.mock.calls[1][0]).toBe('/upload/p/v/metadata');
 
     fs.unlinkSync(tmpZip);
   });
@@ -347,6 +356,7 @@ describe('lib/apiClient build provenance', () => {
       post: jest
         .fn()
         .mockResolvedValueOnce({ data: { url: 'https://upload.example.com/storybook' } })
+        .mockRejectedValueOnce(noPresign404())
         .mockResolvedValueOnce({ status: 201, data: { queued: true, buildNumber: 5 } }),
     };
 
@@ -356,7 +366,7 @@ describe('lib/apiClient build provenance', () => {
       { zipPath: tmpZip, metadataZipPath: tmpMeta, gitContext: { commitSha: 'abc123', branch: 'main' } }
     );
 
-    expect(apiClient.post.mock.calls[1][0]).toBe('/upload/p/v/metadata?commitSha=abc123&branch=main');
+    expect(apiClient.post.mock.calls[2][0]).toBe('/upload/p/v/metadata?commitSha=abc123&branch=main');
 
     fs.unlinkSync(tmpZip);
     fs.unlinkSync(tmpMeta);
