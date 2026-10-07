@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0
+
+### Minor Changes
+
+- e03e6f8: **Metadata ZIPs over 100 MiB now upload.** Before, a large library's metadata ZIP failed with `maxContentLength size of 104857600 exceeded` (the dashboard's reached 101.5 MiB), nothing was indexed, and the build stayed "pending" for ever. The ZIP now goes straight to storage on a presigned URL (presign, PUT, complete) instead of through the upload service, up to 2 GiB. If the PUT or the complete step fails, the build is marked failed with a reason on the upload service, the run prints that it did, and the command exits 1. Against an upload service that predates this change (no presign route) the old route is used for a ZIP of up to 100 MiB, with a warning in the log; a larger ZIP stops with `upload service too old for a ZIP this size`. No flags or settings changed.
+- c10c395: Requires Node.js 20.9 or newer (was 18; Node 18 is past end of life) and updates `sharp` from 0.34.5 to 0.35.5, which closes two libvips advisories (GHSA-f88m-g3jw-g9cj, GHSA-rgj7-g3m4-5g8c) in the image conversion used by `scry import` and the scry-sync converter. Node 18 users stay on 0.11.x. CI now tests Node 20 and 22.
+
 ## 0.11.1
 
 ### Patch Changes
