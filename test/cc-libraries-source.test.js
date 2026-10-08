@@ -171,6 +171,14 @@ describe('guarantee-2 no URL, token or path in an origin field (converter)', () 
         for (const raw of SIGNED) expect(cleanAdobeLink(raw)).toBeNull();
     });
 
+    test('cc-library-no-adobe-link: the two link shapes Scry Sync 0.1.5 builds from ids survive unchanged', () => {
+        const lib = '45f7d4a9-73b2-4002-ba47-432c86554852';
+        const item = '0d6e8a52-9c1b-4f7e-8a3d-6b2f1c9e4a70';
+        for (const link of [`https://www.adobe.com/files/libraries/${lib}/${item}`, `https://www.adobe.com/files/libraries/${lib}`, 'https://stock.adobe.com/123456789']) {
+            expect(cleanAdobeLink(link)).toBe(link);
+        }
+    });
+
     test('guarantee-2 cleanAdobeLink keeps a plain https adobe.com address and strips query and fragment', () => {
         expect(cleanAdobeLink('https://assets.adobe.com/libraries/abc-123')).toBe('https://assets.adobe.com/libraries/abc-123');
         expect(cleanAdobeLink('https://ASSETS.Adobe.com/libraries/abc?x=1#y')).toBe('https://assets.adobe.com/libraries/abc');
