@@ -25,9 +25,9 @@ jobs:
       - name: Capture
         run: ./scripts/capture.sh
       - name: Check the bundle
-        run: npx @scrymore/scry-deployer@0.11.1 upload .scry/capture --dry-run
+        run: npx @scrymore/scry-deployer@0.12.1 upload .scry/capture --dry-run
       - name: Upload to Scry
-        run: npx @scrymore/scry-deployer@0.11.1 upload .scry/capture
+        run: npx @scrymore/scry-deployer@0.12.1 upload .scry/capture
         env:
           SCRY_PROJECT_ID: ${{ vars.SCRY_PROJECT_ID }}
           SCRY_API_KEY: ${{ secrets.SCRY_API_KEY }}

@@ -40,7 +40,7 @@ jobs:
           script: bash scripts/capture.sh
       - name: Upload to Scry
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: npx @scrymore/scry-deployer@0.11.1 upload .scry/capture
+        run: npx @scrymore/scry-deployer@0.12.1 upload .scry/capture
         env:
           SCRY_PROJECT_ID: ${{ vars.SCRY_PROJECT_ID }}
           SCRY_API_KEY: ${{ secrets.SCRY_API_KEY }}
