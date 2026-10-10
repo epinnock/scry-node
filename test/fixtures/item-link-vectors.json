@@ -1,0 +1,27 @@
+{
+  "_note": "Shared test vectors for the item-link follow-on (F17). Every cleaner (scry-sync manifest.ts, scry-node lib/converter/cc-origin.js, processing src/pipeline/cc-origin.ts, dashboard lib/sync-origin.ts) must give exactly these results. Copy into each repo's tests; do not import across repos.",
+  "accept": [
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/ac7e59e9-98c8-4c63-b817-b6a7c5f27591",
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:EU:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/db0af7d9-0129-44da-a909-243f3d1c8038",
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:VA6C2:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/db0af7d9-0129-44da-a909-243f3d1c8038",
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb",
+    "https://www.adobe.com/files/libraries/45f7d4a9-73b2-4002-ba47-432c86554852",
+    "https://stock.adobe.com/91095766"
+  ],
+  "strip_to": [
+    ["https://www.adobe.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/ac7e59e9-98c8-4c63-b817-b6a7c5f27591?libraryVersion=6",
+     "https://www.adobe.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/ac7e59e9-98c8-4c63-b817-b6a7c5f27591"]
+  ],
+  "reject": [
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb:extra/ac7e59e9-98c8-4c63-b817-b6a7c5f27591",
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:us:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/ac7e59e9-98c8-4c63-b817-b6a7c5f27591",
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:US:not-a-uuid/ac7e59e9-98c8-4c63-b817-b6a7c5f27591",
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/token:abc",
+    "https://www.adobe.com/other/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb",
+    "https://www.adobe.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/ac7e59e9-98c8-4c63-b817-b6a7c5f27591/x:y",
+    "https://evil.com/files/libraries/urn:aaid:sc:US:b74cd75b-fa54-4eef-ae2d-acff941ac3bb/ac7e59e9-98c8-4c63-b817-b6a7c5f27591",
+    "https://www.adobe.com/files/libraries/urn%3Aaaid%3Asc%3AUS%3Ab74cd75b-fa54-4eef-ae2d-acff941ac3bb/ac7e59e9-98c8-4c63-b817-b6a7c5f27591",
+    "https://www.adobe.com/x:y"
+  ],
+  "rule": "A ':' is allowed ONLY in the one path segment right after /files/libraries/ on host www.adobe.com, and only when that whole segment matches ^urn:aaid:sc:[A-Z0-9]{2,8}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ; the optional next segment is a plain uuid; nothing after it. Every other existing rule (https, no creds/port, query+fragment stripped, no %, segment length, secret words) stays."
+}
